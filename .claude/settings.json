@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "Bitbucket": {
+      "command": "npx",
+      "args": ["-y", "@aashari/mcp-server-atlassian-bitbucket"],
+      "env": {
+        "ATLASSIAN_BITBUCKET_USERNAME": "jeremy.smith@mvfglobal.com",
+        "ATLASSIAN_BITBUCKET_APP_PASSWORD": "YOUR_BITBUCKET_APP_PASSWORD"
+      }
+    },
+    "atlassian": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-server-atlassian"],
+      "env": {
+        "ATLASSIAN_EMAIL": "YOUR_EMAIL@mvfglobal.com",
+        "ATLASSIAN_API_TOKEN": "YOUR_ATLASSIAN_API_TOKEN",
+        "ATLASSIAN_DOMAIN": "mvfglobal"
+      }
+    }
+  }
+}
