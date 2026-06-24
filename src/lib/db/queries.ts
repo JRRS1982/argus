@@ -1,0 +1,118 @@
+import type Database from "better-sqlite3";
+import type {
+  PullRequestRecord, ApprovalRecord, UserRecord, RepoRecord, PullRequestState,
+} from "@/types";
+
+export const upsertUsers = (
+  db: Database.Database,
+  users: { accountId: string; displayName: string }[],
+): void => {
+  const stmt = db.prepare(
+    `INSERT INTO users (account_id, display_name, included) VALUES (@accountId, @displayName, 1)
+     ON CONFLICT(account_id) DO UPDATE SET display_name = excluded.display_name`,
+  );
+  const tx = db.transaction((rows: typeof users) => rows.forEach((r) => stmt.run(r)));
+  tx(users);
+};
+
+export const upsertRepos = (
+  db: Database.Database,
+  repos: { slug: string; name: string; projectKey: string | null; mainBranch: string }[],
+): void => {
+  const stmt = db.prepare(
+    `INSERT INTO repos (slug, name, project_key, main_branch, included)
+     VALUES (@slug, @name, @projectKey, @mainBranch, 1)
+     ON CONFLICT(slug) DO UPDATE SET
+       name = excluded.name,
+       project_key = excluded.project_key,
+       main_branch = excluded.main_branch`,
+  );
+  const tx = db.transaction((rows: typeof repos) => rows.forEach((r) => stmt.run(r)));
+  tx(repos);
+};
+
+export const setUserIncluded = (db: Database.Database, accountId: string, included: boolean): void => {
+  db.prepare(`UPDATE users SET included = ? WHERE account_id = ?`).run(included ? 1 : 0, accountId);
+};
+
+export const setRepoIncluded = (db: Database.Database, slug: string, included: boolean): void => {
+  db.prepare(`UPDATE repos SET included = ? WHERE slug = ?`).run(included ? 1 : 0, slug);
+};
+
+export const upsertPullRequest = (db: Database.Database, pr: PullRequestRecord): void => {
+  db.prepare(
+    `INSERT INTO pull_requests
+       (repo_slug, id, author_account_id, title, state, created_on,
+        ready_for_review_on, ready_is_fallback, merged_on, destination_branch, url)
+     VALUES
+       (@repoSlug, @id, @authorAccountId, @title, @state, @createdOn,
+        @readyForReviewOn, @readyIsFallback, @mergedOn, @destinationBranch, @url)
+     ON CONFLICT(repo_slug, id) DO UPDATE SET
+       author_account_id = excluded.author_account_id,
+       title = excluded.title,
+       state = excluded.state,
+       created_on = excluded.created_on,
+       ready_for_review_on = excluded.ready_for_review_on,
+       ready_is_fallback = excluded.ready_is_fallback,
+       merged_on = excluded.merged_on,
+       destination_branch = excluded.destination_branch,
+       url = excluded.url`,
+  ).run({ ...pr, readyIsFallback: pr.readyIsFallback ? 1 : 0 });
+};
+
+export const replaceApprovals = (
+  db: Database.Database, repoSlug: string, prId: number, approvals: ApprovalRecord[],
+): void => {
+  const del = db.prepare(`DELETE FROM approvals WHERE repo_slug = ? AND pr_id = ?`);
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO approvals (repo_slug, pr_id, approver_account_id, approved_on)
+     VALUES (@repoSlug, @prId, @approverAccountId, @approvedOn)`,
+  );
+  const tx = db.transaction(() => {
+    del.run(repoSlug, prId);
+    approvals.forEach((a) => ins.run(a));
+  });
+  tx();
+};
+
+type UserRow = { account_id: string; display_name: string; included: number };
+export const getUsers = (db: Database.Database): UserRecord[] =>
+  (db.prepare(`SELECT account_id, display_name, included FROM users ORDER BY display_name`).all() as UserRow[])
+    .map((r) => ({ accountId: r.account_id, displayName: r.display_name, included: !!r.included }));
+
+type RepoRow = { slug: string; name: string; project_key: string | null; main_branch: string; included: number };
+export const getRepos = (db: Database.Database): RepoRecord[] =>
+  (db.prepare(`SELECT slug, name, project_key, main_branch, included FROM repos ORDER BY name`).all() as RepoRow[])
+    .map((r) => ({ slug: r.slug, name: r.name, projectKey: r.project_key, mainBranch: r.main_branch, included: !!r.included }));
+
+type PrRow = {
+  repo_slug: string; id: number; author_account_id: string; title: string; state: string;
+  created_on: string; ready_for_review_on: string; ready_is_fallback: number;
+  merged_on: string | null; destination_branch: string; url: string;
+};
+export const getPullRequests = (db: Database.Database): PullRequestRecord[] =>
+  (db.prepare(`SELECT * FROM pull_requests`).all() as PrRow[]).map((r) => ({
+    id: r.id, repoSlug: r.repo_slug, authorAccountId: r.author_account_id, title: r.title,
+    state: r.state as PullRequestState, createdOn: r.created_on, readyForReviewOn: r.ready_for_review_on,
+    readyIsFallback: !!r.ready_is_fallback, mergedOn: r.merged_on,
+    destinationBranch: r.destination_branch, url: r.url,
+  }));
+
+type ApprovalRow = { repo_slug: string; pr_id: number; approver_account_id: string; approved_on: string | null };
+export const getApprovals = (db: Database.Database): ApprovalRecord[] =>
+  (db.prepare(`SELECT * FROM approvals`).all() as ApprovalRow[]).map((r) => ({
+    repoSlug: r.repo_slug, prId: r.pr_id, approverAccountId: r.approver_account_id, approvedOn: r.approved_on,
+  }));
+
+export const getLastSynced = (db: Database.Database, repoSlug: string): string | null => {
+  const row = db.prepare(`SELECT last_synced_on FROM sync_state WHERE repo_slug = ?`).get(repoSlug) as
+    | { last_synced_on: string } | undefined;
+  return row ? row.last_synced_on : null;
+};
+
+export const setLastSynced = (db: Database.Database, repoSlug: string, iso: string): void => {
+  db.prepare(
+    `INSERT INTO sync_state (repo_slug, last_synced_on) VALUES (?, ?)
+     ON CONFLICT(repo_slug) DO UPDATE SET last_synced_on = excluded.last_synced_on`,
+  ).run(repoSlug, iso);
+};
