@@ -1,80 +1,68 @@
-# PR Review Dashboard
+# Argus — PR Review Dashboard
 
-A Next.js + TypeScript dashboard showing monthly PR review activity per engineer, pulling data from Bitbucket (MVF).
+A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a local SQLite database and presents four analytical tabs over the last 6 months of merged-to-main activity.
 
 ## Stack
 
-- **Next.js 15** (App Router) + **TypeScript**
-- **Tailwind CSS** for styling
-- **Bitbucket REST API** for PR data
-- Pure functions throughout
+- **Next.js 16** (App Router) + **TypeScript** — pure functions throughout
+- **Tailwind CSS v4** for styling
+- **better-sqlite3** for local SQLite cache at `data/argus.sqlite`
+- **Bitbucket REST API v2** — Basic auth using `BITBUCKET_EMAIL` + `BITBUCKET_API_TOKEN`
+
+## The four tabs
+
+- **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
+- **Review-time leaderboard** — median in-review duration per engineer, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
+- **PRs created** — matrix of PRs created per engineer per month
+- **Approvals** — matrix of approvals given per engineer per month (self-approvals excluded)
+
+## Key metric definitions
+
+- **In-review time**: ready-for-review → merged. Falls back to PR creation time when no draft→ready transition is found (flagged `*`).
+- **Scope**: merged-to-main PRs, last 6 months only.
+
+## Environment variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `BITBUCKET_EMAIL` | Yes | — | Atlassian account email (Basic auth) |
+| `BITBUCKET_API_TOKEN` | Yes | — | API token from id.atlassian.com |
+| `BITBUCKET_WORKSPACE` | Yes | `mvfglobal` | Bitbucket workspace slug |
+| `BITBUCKET_PROJECT_KEY` | No | (all projects) | Limit discovery to one project key |
+| `ARGUS_DB_PATH` | No | `data/argus.sqlite` | Override SQLite cache path |
+
+Config is read from `src/config/index.ts`.
 
 ## Running the app
 
 ```bash
+cp .env.local.example .env.local   # fill in BITBUCKET_EMAIL, BITBUCKET_API_TOKEN, BITBUCKET_WORKSPACE
 npm install
-npm run dev   # http://localhost:3000
+npm run dev                         # http://localhost:3000
 ```
 
-## Setup checklist
-
-### 1. Create `.env.local`
-
-Copy `.env.local.example` to `.env.local` and fill in your credentials:
-
-```bash
-cp .env.local.example .env.local
-```
-
-- **BITBUCKET_USERNAME**: your Bitbucket username
-- **BITBUCKET_APP_PASSWORD**: create at https://bitbucket.org/account/settings/app-passwords/ with Repositories (Read) + Pull requests (Read) permissions
-
-### 2. Configure MCP (for Claude dev access)
-
-Edit `.claude/settings.json` and fill in your Atlassian email and API token.
-Generate a token at: https://id.atlassian.com/manage-profile/security/api-tokens
-
-### 3. Resolve and store IDs in config
-
-Open `src/config/index.ts`. The following fields need populating (one-time setup using Claude + MCP):
-
-- `users[].bitbucketAccountId` — your Bitbucket account UUID
-- `users[].jiraAccountId` — your Jira account ID
-- `bitbucket.workspace` — your Bitbucket workspace slug (e.g. `mvfglobal`)
-- `bitbucket.repos` — array of repo slugs to track PRs across
-
-**To find these values with Claude:**
-1. Open this project in Claude Code (with Atlassian MCP configured)
-2. Ask Claude: "What is my Jira account ID?" → paste result into `jiraAccountId`
-3. Ask Claude: "List Bitbucket workspaces I have access to" → paste workspace slug
-4. For `bitbucketAccountId`, check your Bitbucket profile URL or ask Claude via MCP
-5. For repos, ask Claude to list repos in your workspace and add the relevant ones
-
-Once IDs are stored in config, the app queries Bitbucket directly at runtime with no further discovery.
+Then on the Team tab: **Discover workspace** → toggle users/repos → **Refresh data**.
 
 ## Data flow
 
-1. User clicks **Refresh Data** on the dashboard
-2. Browser calls `POST /api/reviews` with `{ months: 3 }`
-3. API route reads config IDs, calls Bitbucket REST API for each user × each month
-4. Two queries per user per month: assigned-to-review count + approved count
-5. Results merge into table state; last-updated timestamp updates
+1. **Discover** (`POST /api/discover`) — queries Bitbucket for all workspace users and repos; stores them in SQLite as candidates.
+2. **Roster** (`GET /api/roster`) — returns current include/exclude state for users and repos.
+3. **Sync** (`POST /api/sync`) — fetches PR activity for all included users/repos over the last 6 months; upserts into SQLite; incremental (only new activity fetched on subsequent runs).
+4. **Insights** (`GET /api/insights`) — reads SQLite and returns leaderboard rows, PRs-created matrix, and approval matrix to the frontend.
 
-## Table usage
+## SQLite schema
 
-- Default view: last **9 months** of columns
-- Click **+ month** to prepend an earlier month (no upper limit)
-- Click **✕** on a column header to remove it (minimum 3 columns enforced)
-- Click **Refresh Data** to fetch the latest 3 months (merges into existing data)
+The cache lives at `data/argus.sqlite` (created automatically; git-ignored). Delete it to start from scratch.
 
-## Adding a new engineer
+Key tables: `pull_requests` (keyed by `(repo_slug, id)`), `activities` (approvals, state transitions), `users`, `repos`.
 
-Add an entry to `config.users` in `src/config/index.ts`:
+## Adding / removing team members
 
-```typescript
-{
-  name: "Name",
-  bitbucketAccountId: "their-bitbucket-uuid",
-  jiraAccountId: "their-jira-account-id",
-}
-```
+Use the **Team** tab checkboxes — no code changes needed. The roster auto-discovers from the Bitbucket workspace on Discover. Re-run Discover if new engineers join the workspace.
+
+## Development notes
+
+- All data-access functions are pure and live in `src/lib/`.
+- API routes live in `src/app/api/`.
+- The frontend is a single-page React app under `src/app/`.
+- No Jira integration; no per-user account-ID config; no external database.
