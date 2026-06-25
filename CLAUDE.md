@@ -12,9 +12,9 @@ A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a loc
 ## The four tabs
 
 - **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
-- **Review-time leaderboard** — median in-review duration per engineer, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
-- **PRs created** — matrix of PRs created per engineer per month
-- **Approvals** — matrix of approvals given per engineer per month (self-approvals excluded)
+- **Review-time leaderboard** — average in-review duration per engineer, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
+- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with row/column totals
+- **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded)
 
 ## Key metric definitions
 

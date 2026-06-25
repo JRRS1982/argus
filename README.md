@@ -14,9 +14,9 @@ A local Next.js dashboard that pulls Bitbucket pull-request data for a team and 
 | Tab | What it shows |
 |-----|---------------|
 | **Team** | Team roster with include/exclude toggles for users and repos; Discover and Refresh data controls |
-| **Review-time leaderboard** | Median and per-PR in-review duration per engineer, sorted fastest-first; expandable rows show individual PRs |
-| **PRs created** | Matrix of PRs created per engineer per month over the last 6 months |
-| **Approvals** | Matrix of approvals given per engineer per month over the last 6 months; self-approvals are excluded |
+| **Review-time leaderboard** | Average and per-PR in-review duration per engineer, sorted fastest-first; expandable rows show individual PRs |
+| **PRs created** | Matrix of PRs created — engineers (rows) × projects/repos (columns) — over the last 6 months, with row/column totals |
+| **Approvals** | Matrix of approvals — PR authors (rows) × approvers (columns) — over the last 6 months: how many of each author's PRs each colleague approved; self-approvals are excluded |
 
 ## Metric definitions
 
