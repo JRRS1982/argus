@@ -1,4 +1,4 @@
-import { BITBUCKET_API, bitbucketGet, fetchAllPages, type FetchFn } from "./client";
+import { BITBUCKET_API, fetchAllPages, type FetchFn } from "./client";
 import type { ApprovalRecord, PullRequestRecord, PullRequestState } from "@/types";
 
 export type RawActivity = {
