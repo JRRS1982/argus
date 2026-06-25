@@ -5,8 +5,13 @@ import { getUsers, getRepos, setUserIncluded, setRepoIncluded } from "@/lib/db/q
 export const runtime = "nodejs";
 
 export async function GET() {
-  const db = getDb();
-  return NextResponse.json({ users: getUsers(db), repos: getRepos(db) });
+  try {
+    const db = getDb();
+    return NextResponse.json({ users: getUsers(db), repos: getRepos(db) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: NextRequest) {
@@ -14,8 +19,13 @@ export async function PATCH(req: NextRequest) {
   if (!body || (body.kind !== "user" && body.kind !== "repo") || typeof body.id !== "string" || typeof body.included !== "boolean") {
     return NextResponse.json({ error: "Expected { kind: 'user'|'repo', id: string, included: boolean }" }, { status: 400 });
   }
-  const db = getDb();
-  if (body.kind === "user") setUserIncluded(db, body.id, body.included);
-  else setRepoIncluded(db, body.id, body.included);
-  return NextResponse.json({ ok: true });
+  try {
+    const db = getDb();
+    if (body.kind === "user") setUserIncluded(db, body.id, body.included);
+    else setRepoIncluded(db, body.id, body.included);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

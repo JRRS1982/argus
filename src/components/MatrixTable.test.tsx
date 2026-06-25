@@ -17,6 +17,6 @@ describe("MatrixTable", () => {
     render(<MatrixTable matrix={matrix} cornerLabel="User \\ Repo" />);
     expect(screen.getByText("Alice")).toBeTruthy();
     expect(screen.getByText("Repo A")).toBeTruthy();
-    expect(screen.getAllByText("3").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("3")).toHaveLength(3);
   });
 });

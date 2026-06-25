@@ -91,7 +91,7 @@ type PrRow = {
   merged_on: string | null; destination_branch: string; url: string;
 };
 export const getPullRequests = (db: Database.Database): PullRequestRecord[] =>
-  (db.prepare(`SELECT * FROM pull_requests`).all() as PrRow[]).map((r) => ({
+  (db.prepare(`SELECT repo_slug, id, author_account_id, title, state, created_on, ready_for_review_on, ready_is_fallback, merged_on, destination_branch, url FROM pull_requests`).all() as PrRow[]).map((r) => ({
     id: r.id, repoSlug: r.repo_slug, authorAccountId: r.author_account_id, title: r.title,
     state: r.state as PullRequestState, createdOn: r.created_on, readyForReviewOn: r.ready_for_review_on,
     readyIsFallback: !!r.ready_is_fallback, mergedOn: r.merged_on,
@@ -100,7 +100,7 @@ export const getPullRequests = (db: Database.Database): PullRequestRecord[] =>
 
 type ApprovalRow = { repo_slug: string; pr_id: number; approver_account_id: string; approved_on: string | null };
 export const getApprovals = (db: Database.Database): ApprovalRecord[] =>
-  (db.prepare(`SELECT * FROM approvals`).all() as ApprovalRow[]).map((r) => ({
+  (db.prepare(`SELECT repo_slug, pr_id, approver_account_id, approved_on FROM approvals`).all() as ApprovalRow[]).map((r) => ({
     repoSlug: r.repo_slug, prId: r.pr_id, approverAccountId: r.approver_account_id, approvedOn: r.approved_on,
   }));
 

@@ -47,4 +47,16 @@ describe("syncRepo", () => {
     expect(fetchPRs.mock.calls[1][2]).toBe("2026-06-01T00:00:00.000Z"); // stored cursor
     db.close();
   });
+
+  it("does not advance the cursor when a per-PR activity fetch fails", async () => {
+    const db = freshDb();
+    const deps: SyncDeps = {
+      db, workspace: "ws", auth: "auth",
+      fetchPRs: vi.fn().mockResolvedValue([basePr]),
+      fetchActivity: vi.fn().mockRejectedValue(new Error("boom")),
+    };
+    await expect(syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z")).rejects.toThrow("boom");
+    expect(getLastSynced(db, "repo-a")).toBeNull();
+    db.close();
+  });
 });

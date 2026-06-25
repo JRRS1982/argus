@@ -9,21 +9,26 @@ import type { InsightsResponse } from "@/types";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const db = getDb();
-  const users = getUsers(db);
-  const repos = getRepos(db);
-  const prs = getPullRequests(db);
-  const approvals = getApprovals(db);
+  try {
+    const db = getDb();
+    const users = getUsers(db);
+    const repos = getRepos(db);
+    const prs = getPullRequests(db);
+    const approvals = getApprovals(db);
 
-  const generatedAt = new Date().toISOString();
-  const sinceIso = sixMonthsAgoIso(generatedAt);
+    const generatedAt = new Date().toISOString();
+    const sinceIso = sixMonthsAgoIso(generatedAt);
 
-  const body: InsightsResponse = {
-    leaderboard: computeLeaderboard(prs, repos, users, sinceIso),
-    prsCreated: computePrsCreatedMatrix(prs, repos, users, sinceIso),
-    approvals: computeApprovalMatrix(prs, approvals, users, sinceIso),
-    sinceIso,
-    generatedAt,
-  };
-  return NextResponse.json(body);
+    const body: InsightsResponse = {
+      leaderboard: computeLeaderboard(prs, repos, users, sinceIso),
+      prsCreated: computePrsCreatedMatrix(prs, repos, users, sinceIso),
+      approvals: computeApprovalMatrix(prs, approvals, users, sinceIso),
+      sinceIso,
+      generatedAt,
+    };
+    return NextResponse.json(body);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
