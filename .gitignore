@@ -44,3 +44,6 @@ next-env.d.ts
 *.sqlite
 *.sqlite-journal
 data/
+
+# Claude Code worktrees (scratch, per-session)
+.claude/worktrees/
