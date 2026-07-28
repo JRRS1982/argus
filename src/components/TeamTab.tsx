@@ -56,7 +56,15 @@ export default function TeamTab({
         {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <p className="text-sm text-gray-600 max-w-4xl">
+        <span className="font-medium">Discover workspace</span> lists every user and repository in the Bitbucket
+        workspace; nothing is selected to begin with. Tick the engineers and repositories you want, then
+        <span className="font-medium"> Refresh data</span> to pull their PR history. Only ticked repositories are
+        fetched, and only ticked engineers appear in the other tabs.
+      </p>
+
+      {/* Two short lists of checkboxes; constrained so they don't stretch across a wide screen. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl">
         <RosterList title="Engineers" empty="No users yet — run Discover."
           items={roster.users.map((u) => ({ id: u.accountId, label: u.displayName, included: u.included }))}
           onToggle={(id, inc) => toggle("user", id, inc)} />

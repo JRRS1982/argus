@@ -1,11 +1,17 @@
 import type Database from "better-sqlite3";
 import type { PullRequestRecord } from "@/types";
-import { upsertPullRequest, replaceApprovals, getLastSynced, setLastSynced } from "@/lib/db/queries";
+import { upsertPullRequest, replaceApprovals, mergeApprovals, getLastSynced, setLastSynced } from "@/lib/db/queries";
 import {
   deriveReadyForReview, extractApprovals,
   fetchPullRequestsUpdatedSince, fetchPullRequestActivity,
 } from "@/lib/bitbucket/pulls";
 import { sixMonthsAgoIso } from "@/lib/window";
+
+// "deep"  — one /activity call per PR: exact ready-for-review times and the full
+//           approval history. Costs ~1 request per PR.
+// "fast"  — list calls only: approvals come from participants[], and every PR's
+//           review time falls back to createdOn. Costs ~1 request per 50 PRs.
+export type SyncMode = "fast" | "deep";
 
 export type SyncDeps = {
   db: Database.Database;
@@ -13,6 +19,7 @@ export type SyncDeps = {
   auth: string;
   fetchPRs: typeof fetchPullRequestsUpdatedSince;
   fetchActivity: typeof fetchPullRequestActivity;
+  mode?: SyncMode;
 };
 
 export const syncRepo = async (
@@ -22,11 +29,24 @@ export const syncRepo = async (
 ): Promise<{ repoSlug: string; prCount: number }> => {
   const since = getLastSynced(deps.db, repoSlug) ?? sixMonthsAgoIso(nowIso);
   const partials = await deps.fetchPRs(deps.workspace, repoSlug, since, deps.auth);
+  const mode = deps.mode ?? "deep";
 
   for (const partial of partials) {
+    // `approvals` must not reach upsertPullRequest — better-sqlite3 rejects
+    // named parameters that the statement does not declare.
+    const { approvals: participantApprovals, ...prFields } = partial;
+
+    if (mode === "fast") {
+      const pr: PullRequestRecord = {
+        ...prFields, readyForReviewOn: prFields.createdOn, readyIsFallback: true,
+      };
+      upsertPullRequest(deps.db, pr);
+      mergeApprovals(deps.db, participantApprovals);
+      continue;
+    }
     const activity = await deps.fetchActivity(deps.workspace, repoSlug, partial.id, deps.auth);
-    const { readyForReviewOn, readyIsFallback } = deriveReadyForReview(partial.createdOn, activity);
-    const pr: PullRequestRecord = { ...partial, readyForReviewOn, readyIsFallback };
+    const { readyForReviewOn, readyIsFallback } = deriveReadyForReview(prFields.createdOn, activity);
+    const pr: PullRequestRecord = { ...prFields, readyForReviewOn, readyIsFallback };
     upsertPullRequest(deps.db, pr);
     replaceApprovals(deps.db, repoSlug, partial.id, extractApprovals(repoSlug, partial.id, activity));
   }

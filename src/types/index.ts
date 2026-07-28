@@ -1,25 +1,4 @@
-export type CellMetrics = {
-  approved: number;
-  assignedToReview: number;
-};
-
-export type MonthColumn = {
-  year: number;
-  month: number; // 1-indexed
-  label: string; // e.g. "Feb 2025"
-  key: string;   // e.g. "2025-02"
-};
-
-export type User = {
-  name: string;
-  bitbucketAccountId: string;
-  jiraAccountId: string;
-};
-
-// reviewData[userName][monthKey] = CellMetrics
-export type ReviewData = Record<string, Record<string, CellMetrics>>;
-
-// ── Argus domain types ───────────────────────────────────────────────
+import type { InsightsWindow } from "@/lib/window";
 
 export type PullRequestState = "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED";
 
@@ -72,8 +51,10 @@ export type LeaderboardPR = {
 export type LeaderboardRow = {
   accountId: string;
   displayName: string;
-  prCount: number;
+  prCount: number;      // merged PRs with a measured duration
+  openPrCount: number;  // still-open PRs; merged + open reconciles with the PRs-created tab
   averageReviewMs: number;
+  medianReviewMs: number;
   prs: LeaderboardPR[]; // sorted slowest-first within the row
 };
 
@@ -83,12 +64,15 @@ export type Matrix = {
   cells: number[][];   // cells[rowIndex][colIndex]
   rowTotals: number[];
   colTotals: number[];
+  // Optional per-row summary rendered after the Total column (e.g. distinct services touched).
+  extraColumn?: { label: string; values: number[] };
 };
 
 export type InsightsResponse = {
   leaderboard: LeaderboardRow[];
   prsCreated: Matrix;
   approvals: Matrix;
+  window: InsightsWindow;
   sinceIso: string;
   generatedAt: string;
 };

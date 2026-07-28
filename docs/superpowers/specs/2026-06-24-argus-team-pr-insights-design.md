@@ -12,10 +12,6 @@ how PR creation and approvals are distributed across the team. It extends the
 existing `pr-review-dashboard` repo, reusing its Bitbucket data layer and adding a
 local SQLite cache plus a pure-function analytics core.
 
-The name **Argus** (Argus Panoptes, the all-seeing giant of Greek myth) reflects the
-code-review focus and matches MVF's mythology house-style (artemis, deimos, phobos).
-The repo folder stays `pr-review-dashboard`; "Argus" is the app title/branding.
-
 ## Goals
 
 - Visibility into team code-review activity over the last 6 months.
@@ -30,15 +26,6 @@ The repo folder stays `pr-review-dashboard`; "Argus" is the app title/branding.
 - Per-PR comment counts or review-thread analysis.
 - Authentication / multi-user hosting — it is a local personal tool.
 - Live-only fetching (replaced by a persisted cache).
-
-## Starting point
-
-The existing `pr-review-dashboard` is the user's own project (authored by
-`jrrsMVF <jeremy.smith@mvfglobal.com>`), with **no git remote**, a single
-`Initial commit from Create Next App`, and all dashboard code currently
-**uncommitted** in the working tree. Plan: commit the existing uncommitted code to
-`main`, then create a feature branch to build Argus on top. The proven Bitbucket
-client (`src/lib/bitbucket.ts`) and config model are reused and extended.
 
 ## Architecture
 

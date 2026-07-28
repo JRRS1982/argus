@@ -12,14 +12,21 @@ A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a loc
 ## The four tabs
 
 - **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
-- **Review-time leaderboard** — average in-review duration per engineer, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
-- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with row/column totals
-- **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded)
+- **Review-time leaderboard** — median and average in-review duration per engineer, ranked by median, with Merged and Open PR counts, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
+- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with row/column totals and a Services column (distinct repos touched)
+- **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded, diagonal greyed out, each row's top approver highlighted), plus a "Merged, no approval" column
+
+Engineer name columns are sorted alphabetically (case-insensitive) in both matrices; both matrices label their axes; each tab carries a short description above its table. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
 
 ## Key metric definitions
 
-- **In-review time**: ready-for-review → merged. Falls back to PR creation time when no draft→ready transition is found (flagged `*`).
-- **Scope**: merged-to-main PRs, last 6 months only.
+- **In-review time**: in practice **created → last touched**. The end of the interval is `updated_on`, because Bitbucket's PR list exposes no merge timestamp — that is the merge for almost all PRs, but drifts later if anyone comments after merging. The start is the draft→ready transition where one was recorded, otherwise creation time (flagged `*`). Only a `deep` sync can derive real ready times; a `fast` sync makes every PR a fallback. The leaderboard states all of this in the UI.
+- **Median vs average review time**: both are shown; the leaderboard ranks by **median** because a few long-lived PRs skew the mean.
+- **Services**: the number of distinct included repos an engineer opened at least one PR in — breadth, not volume.
+- **Merged, no approval**: merged PRs with no approval from anyone other than the author. They have no approver to attribute, so they sit outside the grid rather than being invisible.
+- **Scope**: one shared definition in `src/lib/analytics/scope.ts` — `MERGED` or `OPEN` state, targeting the repo's main branch, in an included repo, by an included user. `DECLINED`/`SUPERSEDED` are excluded as abandoned work (roughly half of what Bitbucket returns). Every tab uses it, so the tabs cannot disagree about which PRs exist. State is filtered on read, not at fetch: sync must keep collecting every state, or a PR cached while open would never learn it was later declined.
+- **Tab reconciliation**: on **All time**, a leaderboard row's `Merged + Open` equals that engineer's row total on PRs created. On a windowed view they differ by design — the leaderboard windows on when a PR *landed*, PRs created windows on when it was *opened*. Engineers with no merged PRs in the window are absent from the leaderboard entirely.
+- **Window**: rolling 6 months by default (recomputed per request), or all time. Both are read-time filters — the SQLite cache is never pruned.
 
 ## Environment variables
 
@@ -41,7 +48,9 @@ npm install
 npm run dev                         # http://localhost:3000
 ```
 
-Then on the Team tab: **Discover workspace** → toggle users/repos → **Refresh data**.
+Then on the Team tab: **Discover workspace** → tick the users/repos you want → **Refresh data**.
+
+Discovery adds everything it finds as **excluded**, so a first run starts with nothing selected — the workspace can hold hundreds of repos, and only ticked ones are fetched. Re-running Discover never changes a choice you have already made.
 
 ## Data flow
 
@@ -58,7 +67,7 @@ Key tables: `pull_requests` (keyed by `(repo_slug, id)`), `activities` (approval
 
 ## Adding / removing team members
 
-Use the **Team** tab checkboxes — no code changes needed. The roster auto-discovers from the Bitbucket workspace on Discover. Re-run Discover if new engineers join the workspace.
+Use the **Team** tab checkboxes — no code changes needed. The roster auto-discovers from the Bitbucket workspace on Discover, with new arrivals excluded by default. Re-run Discover if new engineers join the workspace, then tick them.
 
 ## Development notes
 

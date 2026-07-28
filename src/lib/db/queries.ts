@@ -8,7 +8,8 @@ export const upsertUsers = (
   users: { accountId: string; displayName: string }[],
 ): void => {
   const stmt = db.prepare(
-    `INSERT INTO users (account_id, display_name, included) VALUES (@accountId, @displayName, 1)
+    // New users arrive excluded; re-running Discover never changes an existing choice.
+    `INSERT INTO users (account_id, display_name, included) VALUES (@accountId, @displayName, 0)
      ON CONFLICT(account_id) DO UPDATE SET display_name = excluded.display_name`,
   );
   const tx = db.transaction((rows: typeof users) => rows.forEach((r) => stmt.run(r)));
@@ -20,8 +21,9 @@ export const upsertRepos = (
   repos: { slug: string; name: string; projectKey: string | null; mainBranch: string }[],
 ): void => {
   const stmt = db.prepare(
+    // New repos arrive excluded — see users above.
     `INSERT INTO repos (slug, name, project_key, main_branch, included)
-     VALUES (@slug, @name, @projectKey, @mainBranch, 1)
+     VALUES (@slug, @name, @projectKey, @mainBranch, 0)
      ON CONFLICT(slug) DO UPDATE SET
        name = excluded.name,
        project_key = excluded.project_key,
@@ -52,12 +54,35 @@ export const upsertPullRequest = (db: Database.Database, pr: PullRequestRecord):
        title = excluded.title,
        state = excluded.state,
        created_on = excluded.created_on,
-       ready_for_review_on = excluded.ready_for_review_on,
-       ready_is_fallback = excluded.ready_is_fallback,
+       -- A derived ready time (fallback = 0) is better data than a createdOn
+       -- guess, so never let a later fast sync overwrite one.
+       ready_for_review_on = CASE
+         WHEN excluded.ready_is_fallback = 0 THEN excluded.ready_for_review_on
+         WHEN pull_requests.ready_is_fallback = 0 THEN pull_requests.ready_for_review_on
+         ELSE excluded.ready_for_review_on END,
+       ready_is_fallback = CASE
+         WHEN excluded.ready_is_fallback = 0 THEN 0
+         ELSE pull_requests.ready_is_fallback END,
        merged_on = excluded.merged_on,
        destination_branch = excluded.destination_branch,
        url = excluded.url`,
   ).run({ ...pr, readyIsFallback: pr.readyIsFallback ? 1 : 0 });
+};
+
+// Additive counterpart to replaceApprovals, for the fast (list-only) sync path:
+// adds approvers we did not know about without discarding timestamps already
+// recorded by a deep sync. Cannot observe withdrawn approvals — a deep sync
+// reconciles those.
+export const mergeApprovals = (
+  db: Database.Database, approvals: ApprovalRecord[],
+): void => {
+  const ins = db.prepare(
+    `INSERT INTO approvals (repo_slug, pr_id, approver_account_id, approved_on)
+     VALUES (@repoSlug, @prId, @approverAccountId, @approvedOn)
+     ON CONFLICT(repo_slug, pr_id, approver_account_id) DO NOTHING`,
+  );
+  const tx = db.transaction((rows: ApprovalRecord[]) => rows.forEach((a) => ins.run(a)));
+  tx(approvals);
 };
 
 export const replaceApprovals = (
@@ -77,12 +102,14 @@ export const replaceApprovals = (
 
 type UserRow = { account_id: string; display_name: string; included: number };
 export const getUsers = (db: Database.Database): UserRecord[] =>
-  (db.prepare(`SELECT account_id, display_name, included FROM users ORDER BY display_name`).all() as UserRow[])
+  // COLLATE NOCASE: SQLite's default collation sorts all uppercase before lowercase,
+  // which scatters names like "carolyn.symonds" below every capitalised name.
+  (db.prepare(`SELECT account_id, display_name, included FROM users ORDER BY display_name COLLATE NOCASE`).all() as UserRow[])
     .map((r) => ({ accountId: r.account_id, displayName: r.display_name, included: !!r.included }));
 
 type RepoRow = { slug: string; name: string; project_key: string | null; main_branch: string; included: number };
 export const getRepos = (db: Database.Database): RepoRecord[] =>
-  (db.prepare(`SELECT slug, name, project_key, main_branch, included FROM repos ORDER BY name`).all() as RepoRow[])
+  (db.prepare(`SELECT slug, name, project_key, main_branch, included FROM repos ORDER BY name COLLATE NOCASE`).all() as RepoRow[])
     .map((r) => ({ slug: r.slug, name: r.name, projectKey: r.project_key, mainBranch: r.main_branch, included: !!r.included }));
 
 type PrRow = {

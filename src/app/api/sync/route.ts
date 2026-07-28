@@ -1,28 +1,42 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/config";
 import { getDb } from "@/lib/db";
 import { getRepos } from "@/lib/db/queries";
 import { getAuthHeader } from "@/lib/bitbucket/client";
 import { fetchPullRequestsUpdatedSince, fetchPullRequestActivity } from "@/lib/bitbucket/pulls";
-import { syncAll, type SyncDeps } from "@/lib/sync/sync";
+import { syncAll, type SyncDeps, type SyncMode } from "@/lib/sync/sync";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+// Body: { mode?: "fast" | "deep" }. Defaults to "fast" — it populates both
+// matrices at roughly 1 request per 50 PRs. Use "deep" for accurate
+// ready-for-review times, at the cost of 1 request per PR.
+export async function POST(req: NextRequest) {
   try {
+    const body = await req.json().catch(() => null);
+    const requested = body?.mode;
+    if (requested !== undefined && requested !== "fast" && requested !== "deep") {
+      return NextResponse.json({ error: "Expected { mode?: 'fast'|'deep' }" }, { status: 400 });
+    }
+    const mode: SyncMode = requested ?? "fast";
+
     const auth = getAuthHeader();
     const db = getDb();
     const includedRepos = getRepos(db).filter((r) => r.included).map((r) => r.slug);
     if (includedRepos.length === 0) {
-      return NextResponse.json({ error: "No repos selected. Run Discover and include some repos first." }, { status: 400 });
+      return NextResponse.json(
+        { error: "No repositories selected. Run Discover, then tick the repositories to pull data from." },
+        { status: 400 },
+      );
     }
     const deps: SyncDeps = {
       db, workspace: config.workspace, auth,
       fetchPRs: fetchPullRequestsUpdatedSince,
       fetchActivity: fetchPullRequestActivity,
+      mode,
     };
     const summary = await syncAll(deps, includedRepos, new Date().toISOString());
-    return NextResponse.json(summary);
+    return NextResponse.json({ ...summary, mode });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

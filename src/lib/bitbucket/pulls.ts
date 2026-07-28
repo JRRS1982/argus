@@ -6,6 +6,12 @@ export type RawActivity = {
   update?: { date: string; draft?: boolean };
 };
 
+// Current approval state as returned inline on the PR list endpoint.
+export type RawParticipant = {
+  approved?: boolean;
+  user?: { account_id: string };
+};
+
 type RawPr = {
   id: number;
   title: string;
@@ -15,6 +21,13 @@ type RawPr = {
   author: { account_id: string };
   destination: { branch: { name: string } };
   links: { html: { href: string } };
+  participants?: RawParticipant[];
+};
+
+// A PR as known from the list endpoint alone: no draft-transition history, but
+// approvals are already present via participants[].
+export type PullRequestPartial = Omit<PullRequestRecord, "readyForReviewOn" | "readyIsFallback"> & {
+  approvals: ApprovalRecord[];
 };
 
 // Earliest activity update that marks the PR non-draft = when it became ready for review.
@@ -46,17 +59,35 @@ export const extractApprovals = (
       approvedOn: a.approval!.date ?? null,
     }));
 
+// Approvals as currently recorded on the PR itself. No timestamps are available
+// here, and approvals withdrawn or reset by later commits are simply absent —
+// the activity feed (extractApprovals) is the authoritative history.
+export const extractApprovalsFromParticipants = (
+  repoSlug: string,
+  prId: number,
+  participants: RawParticipant[] = [],
+): ApprovalRecord[] =>
+  participants
+    .filter((p) => p.approved === true && p.user?.account_id)
+    .map((p) => ({
+      repoSlug,
+      prId,
+      approverAccountId: p.user!.account_id,
+      approvedOn: null,
+    }));
+
 export const fetchPullRequestsUpdatedSince = async (
   workspace: string,
   repoSlug: string,
   sinceIso: string,
   auth: string,
   fetchFn: FetchFn = globalThis.fetch,
-): Promise<Omit<PullRequestRecord, "readyForReviewOn" | "readyIsFallback">[]> => {
+): Promise<PullRequestPartial[]> => {
   const states = "state=MERGED&state=OPEN&state=DECLINED&state=SUPERSEDED";
   const q = encodeURIComponent(`updated_on>="${sinceIso}"`);
   const fields = "fields=values.id,values.title,values.state,values.created_on,values.updated_on," +
-    "values.author.account_id,values.destination.branch.name,values.links.html.href,next";
+    "values.author.account_id,values.destination.branch.name,values.links.html.href," +
+    "values.participants.approved,values.participants.user.account_id,next";
   const url = `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/pullrequests?${states}&q=${q}&pagelen=50&${fields}`;
   const raw = await fetchAllPages<RawPr>(url, auth, fetchFn);
   return raw.map((p) => ({
@@ -69,6 +100,7 @@ export const fetchPullRequestsUpdatedSince = async (
     mergedOn: p.state === "MERGED" ? p.updated_on : null,
     destinationBranch: p.destination.branch.name,
     url: p.links.html.href,
+    approvals: extractApprovalsFromParticipants(repoSlug, p.id, p.participants),
   }));
 };
 

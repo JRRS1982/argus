@@ -314,7 +314,7 @@ git commit -m "feat: add Argus domain and view-model types"
 
 ```ts
 export type AppConfig = {
-  workspace: string;       // Bitbucket workspace slug, e.g. "mvfglobal"
+  workspace: string;       // Bitbucket workspace slug
   projectKey: string | null; // optional Bitbucket project key to scope repos; null = whole workspace
   dbPath: string;          // path to the SQLite cache file
 };

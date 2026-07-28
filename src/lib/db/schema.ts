@@ -1,10 +1,12 @@
 import type Database from "better-sqlite3";
 
 export const SCHEMA_SQL = `
+-- included defaults to 0: Discover finds the whole workspace (hundreds of repos),
+-- so a first run starts with nothing selected and the user opts in on the Team tab.
 CREATE TABLE IF NOT EXISTS users (
   account_id   TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
-  included     INTEGER NOT NULL DEFAULT 1
+  included     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS repos (
@@ -12,7 +14,7 @@ CREATE TABLE IF NOT EXISTS repos (
   name         TEXT NOT NULL,
   project_key  TEXT,
   main_branch  TEXT NOT NULL DEFAULT 'main',
-  included     INTEGER NOT NULL DEFAULT 1
+  included     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS pull_requests (

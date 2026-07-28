@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeLeaderboard } from "@/lib/analytics/leaderboard";
+import { computePrsCreatedMatrix } from "@/lib/analytics/matrices";
 import type { PullRequestRecord, RepoRecord, UserRecord } from "@/types";
 
 const repos: RepoRecord[] = [
@@ -20,6 +21,8 @@ const pr = (over: Partial<PullRequestRecord>): PullRequestRecord => ({
 
 const SINCE = "2026-01-01T00:00:00.000Z";
 
+const DAY = 86_400_000;
+
 describe("computeLeaderboard", () => {
   it("averages each author's merged-to-main PR review times and sorts fastest-first", () => {
     const prs = [
@@ -30,7 +33,59 @@ describe("computeLeaderboard", () => {
     const board = computeLeaderboard(prs, repos, users, SINCE);
     expect(board.map((r) => r.displayName)).toEqual(["Bob", "Alice"]); // Bob 1.5d < Alice 2d
     expect(board[1].prCount).toBe(2);
-    expect(board[1].averageReviewMs).toBe(2 * 86_400_000);
+    expect(board[1].averageReviewMs).toBe(2 * DAY);
+  });
+
+  it("reports a median that ignores outliers, and ranks by it rather than the average", () => {
+    const prs = [
+      // Alice: 1d, 1d, 30d -> median 1d, average ~10.7d (one stale PR skews the mean)
+      pr({ id: 1, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
+      pr({ id: 2, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
+      pr({ id: 3, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-03-03T00:00:00.000Z" }),
+      // Bob: 2d, 4d -> median 3d, average 3d
+      pr({ id: 4, authorAccountId: "u2", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-03T00:00:00.000Z" }),
+      pr({ id: 5, authorAccountId: "u2", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-05T00:00:00.000Z" }),
+    ];
+    const board = computeLeaderboard(prs, repos, users, SINCE);
+    const alice = board.find((r) => r.displayName === "Alice")!;
+    const bob = board.find((r) => r.displayName === "Bob")!;
+
+    expect(alice.medianReviewMs).toBe(1 * DAY);          // odd count -> middle value
+    expect(bob.medianReviewMs).toBe(3 * DAY);            // even count -> mean of the two middles
+    expect(alice.averageReviewMs).toBeGreaterThan(bob.averageReviewMs);
+    expect(board.map((r) => r.displayName)).toEqual(["Alice", "Bob"]); // ranked by median, not average
+  });
+
+  it("honours repo include/exclude toggles, like the matrices do", () => {
+    const withExcluded: RepoRecord[] = [
+      ...repos,
+      { slug: "repo-x", name: "Repo X", projectKey: null, mainBranch: "main", included: false },
+    ];
+    const prs = [
+      pr({ id: 1, repoSlug: "repo-a" }),
+      pr({ id: 2, repoSlug: "repo-x" }), // excluded repo -> must not count
+    ];
+    const [alice] = computeLeaderboard(prs, withExcluded, users, SINCE);
+    expect(alice.prCount).toBe(1);
+    expect(alice.prs.map((p) => p.repoSlug)).toEqual(["repo-a"]);
+  });
+
+  it("reports open PRs so merged + open reconciles with the PRs-created matrix", () => {
+    const prs = [
+      pr({ id: 1, authorAccountId: "u1", state: "MERGED" }),
+      pr({ id: 2, authorAccountId: "u1", state: "OPEN", mergedOn: null }),
+      pr({ id: 3, authorAccountId: "u1", state: "OPEN", mergedOn: null }),
+      pr({ id: 4, authorAccountId: "u1", state: "DECLINED", mergedOn: null }),      // abandoned, counted nowhere
+      pr({ id: 5, authorAccountId: "u1", state: "OPEN", mergedOn: null, destinationBranch: "develop" }), // not main
+    ];
+    const [alice] = computeLeaderboard(prs, repos, users, SINCE);
+    expect(alice.prCount).toBe(1);
+    expect(alice.openPrCount).toBe(2);
+
+    // Same population as the created matrix: 1 merged + 2 open = 3.
+    const created = computePrsCreatedMatrix(prs, repos, users, SINCE);
+    const aliceRow = created.rowUsers.findIndex((u) => u.accountId === "u1");
+    expect(created.rowTotals[aliceRow]).toBe(alice.prCount + alice.openPrCount);
   });
 
   it("excludes non-merged, non-main, out-of-window PRs and excluded users", () => {

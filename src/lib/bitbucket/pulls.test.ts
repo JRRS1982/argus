@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  deriveReadyForReview, extractApprovals, fetchPullRequestsUpdatedSince, type RawActivity,
+  deriveReadyForReview, extractApprovals, extractApprovalsFromParticipants,
+  fetchPullRequestsUpdatedSince, type RawActivity, type RawParticipant,
 } from "@/lib/bitbucket/pulls";
 
 describe("deriveReadyForReview", () => {
@@ -36,6 +37,25 @@ describe("extractApprovals", () => {
   });
 });
 
+describe("extractApprovalsFromParticipants", () => {
+  it("keeps only approvers, with no timestamp available", () => {
+    const participants: RawParticipant[] = [
+      { approved: true, user: { account_id: "u2" } },
+      { approved: false, user: { account_id: "u3" } },
+      { approved: true, user: { account_id: "u4" } },
+    ];
+    expect(extractApprovalsFromParticipants("repo-a", 1, participants)).toEqual([
+      { repoSlug: "repo-a", prId: 1, approverAccountId: "u2", approvedOn: null },
+      { repoSlug: "repo-a", prId: 1, approverAccountId: "u4", approvedOn: null },
+    ]);
+  });
+
+  it("tolerates a missing participants array and malformed entries", () => {
+    expect(extractApprovalsFromParticipants("repo-a", 1)).toEqual([]);
+    expect(extractApprovalsFromParticipants("repo-a", 1, [{ approved: true }])).toEqual([]);
+  });
+});
+
 const jsonResponse = (body: unknown) =>
   ({ ok: true, status: 200, statusText: "OK", json: async () => body }) as Response;
 
@@ -61,5 +81,32 @@ describe("fetchPullRequestsUpdatedSince", () => {
     });
     const url = fetchFn.mock.calls[0][0] as string;
     expect(decodeURIComponent(url)).toContain('updated_on>="2025-12-01T00:00:00.000Z"');
+  });
+
+  it("requests participants and returns their approvals inline", async () => {
+    const fetchFn = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        values: [{
+          id: 7, title: "Add other thing", state: "MERGED",
+          created_on: "2026-01-01T00:00:00.000Z", updated_on: "2026-01-02T00:00:00.000Z",
+          author: { account_id: "u1" },
+          destination: { branch: { name: "main" } },
+          links: { html: { href: "https://x/7" } },
+          participants: [
+            { approved: true, user: { account_id: "u2" } },
+            { approved: false, user: { account_id: "u3" } },
+          ],
+        }],
+      }),
+    );
+    const prs = await fetchPullRequestsUpdatedSince(
+      "ws", "repo-a", "2025-12-01T00:00:00.000Z", "auth", fetchFn as unknown as typeof fetch,
+    );
+    expect(prs[0].approvals).toEqual([
+      { repoSlug: "repo-a", prId: 7, approverAccountId: "u2", approvedOn: null },
+    ]);
+    const url = fetchFn.mock.calls[0][0] as string;
+    expect(url).toContain("values.participants.approved");
+    expect(url).toContain("values.participants.user.account_id");
   });
 });
