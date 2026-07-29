@@ -12,7 +12,7 @@ A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a loc
 ## The four tabs
 
 - **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
-- **Review-time leaderboard** — median and average in-review duration per engineer, ranked by median, with Merged and Open PR counts, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
+- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
 - **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with row/column totals and a Services column (distinct repos touched)
 - **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded, diagonal greyed out, each row's top approver highlighted), plus a "Merged, no approval" column
 
@@ -21,7 +21,7 @@ Engineer name columns are sorted alphabetically (case-insensitive) in both matri
 ## Key metric definitions
 
 - **In-review time**: in practice **created → last touched**. The end of the interval is `updated_on`, because Bitbucket's PR list exposes no merge timestamp — that is the merge for almost all PRs, but drifts later if anyone comments after merging. The start is the draft→ready transition where one was recorded, otherwise creation time (flagged `*`). Only a `deep` sync can derive real ready times; a `fast` sync makes every PR a fallback. The leaderboard states all of this in the UI.
-- **Median vs average review time**: both are shown; the leaderboard ranks by **median** because a few long-lived PRs skew the mean.
+- **Median vs average review time**: both are shown. **Median** is the more trustworthy of the two, because a few long-lived PRs skew the mean.
 - **Services**: the number of distinct included repos an engineer opened at least one PR in — breadth, not volume.
 - **Merged, no approval**: merged PRs with no approval from anyone other than the author. They have no approver to attribute, so they sit outside the grid rather than being invisible.
 - **Scope**: one shared definition in `src/lib/analytics/scope.ts` — `MERGED` or `OPEN` state, targeting the repo's main branch, in an included repo, by an included user. `DECLINED`/`SUPERSEDED` are excluded as abandoned work (roughly half of what Bitbucket returns). Every tab uses it, so the tabs cannot disagree about which PRs exist. State is filtered on read, not at fetch: sync must keep collecting every state, or a PR cached while open would never learn it was later declined.
