@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the template must stay in the repo: `.env*` above matches it too, and it
+# only survives today because it was committed before that rule existed.
+!.env.local.example
 
 # vercel
 .vercel
@@ -47,3 +50,7 @@ data/
 
 # Claude Code worktrees (scratch, per-session)
 .claude/worktrees/
+
+# Superpowers working notes (plans, specs, task briefs) — local scratch
+docs/superpowers/
+.superpowers/
