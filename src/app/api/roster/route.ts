@@ -21,6 +21,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  if (isDemoRequest(req.nextUrl)) {
+    return NextResponse.json(
+      { error: "Demo mode shows fabricated data — turn it off to change the roster." },
+      { status: 400 },
+    );
+  }
   const body = await req.json().catch(() => null);
   if (!body || (body.kind !== "user" && body.kind !== "repo") || typeof body.id !== "string" || typeof body.included !== "boolean") {
     return NextResponse.json({ error: "Expected { kind: 'user'|'repo', id: string, included: boolean }" }, { status: 400 });

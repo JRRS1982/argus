@@ -33,11 +33,16 @@ export default function TeamTab({
   };
 
   const toggle = async (kind: "user" | "repo", id: string, included: boolean) => {
-    await fetch("/api/roster", {
+    const res = await fetch("/api/roster", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, id, included }),
     });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error ?? "Request failed");
+      return;
+    }
     await reloadRoster();
   };
 
@@ -67,10 +72,10 @@ export default function TeamTab({
 
       {/* Two short lists of checkboxes; constrained so they don't stretch across a wide screen. */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl">
-        <RosterList title="Engineers" empty="No users yet — run Discover."
+        <RosterList title="Engineers" empty="No users yet — run Discover." demo={demo}
           items={roster.users.map((u) => ({ id: u.accountId, label: u.displayName, included: u.included }))}
           onToggle={(id, inc) => toggle("user", id, inc)} />
-        <RosterList title="Repositories" empty="No repos yet — run Discover."
+        <RosterList title="Repositories" empty="No repos yet — run Discover." demo={demo}
           items={roster.repos.map((r) => ({ id: r.slug, label: r.name, included: r.included }))}
           onToggle={(id, inc) => toggle("repo", id, inc)} />
       </div>
@@ -79,11 +84,12 @@ export default function TeamTab({
 }
 
 function RosterList({
-  title, empty, items, onToggle,
+  title, empty, items, onToggle, demo,
 }: {
   title: string; empty: string;
   items: { id: string; label: string; included: boolean }[];
   onToggle: (id: string, included: boolean) => void;
+  demo: boolean;
 }) {
   return (
     <div>
@@ -92,7 +98,9 @@ function RosterList({
         <ul className="space-y-1">
           {items.map((it) => (
             <li key={it.id} className="flex items-center gap-2">
-              <input type="checkbox" checked={it.included} onChange={(e) => onToggle(it.id, e.target.checked)} />
+              <input type="checkbox" checked={it.included} disabled={demo}
+                title={demo ? "Turn off demo data to change the roster" : undefined}
+                onChange={(e) => onToggle(it.id, e.target.checked)} />
               <span className="text-sm text-gray-800">{it.label}</span>
             </li>
           ))}
