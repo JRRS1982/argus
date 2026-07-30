@@ -113,6 +113,48 @@ describe("MatrixTable", () => {
     expect(container.querySelectorAll("td.bg-amber-100")).toHaveLength(0);
   });
 
+  it("puts totals immediately after the engineer name when asked", () => {
+    const withExtra: Matrix = { ...matrix, extraColumn: { label: "Services", values: [1] } };
+    const { container } = render(
+      <MatrixTable
+        matrix={withExtra}
+        rowAxisLabel="Engineer" colAxisLabel="Repository"
+        rowTotalLabel="PRs by engineer" colTotalLabel="PRs in repo"
+        description="d" totalsPosition="leading"
+      />,
+    );
+    const headers = [...container.querySelectorAll("thead tr")[1].children].map((c) => c.textContent);
+    expect(headers).toEqual(["↓ Engineer", "PRs by engineer", "Services", "Repo A"]);
+  });
+
+  it("keeps totals at the end by default", () => {
+    const withExtra: Matrix = { ...matrix, extraColumn: { label: "Services", values: [1] } };
+    const { container } = render(
+      <MatrixTable
+        matrix={withExtra}
+        rowAxisLabel="Engineer" colAxisLabel="Repository"
+        rowTotalLabel="PRs by engineer" colTotalLabel="PRs in repo"
+        description="d"
+      />,
+    );
+    const headers = [...container.querySelectorAll("thead tr")[1].children].map((c) => c.textContent);
+    expect(headers).toEqual(["↓ Engineer", "Repo A", "PRs by engineer", "Services"]);
+  });
+
+  it("aligns body cells with the leading header order", () => {
+    const withExtra: Matrix = { ...matrix, extraColumn: { label: "Services", values: [1] } };
+    const { container } = render(
+      <MatrixTable
+        matrix={withExtra}
+        rowAxisLabel="Engineer" colAxisLabel="Repository"
+        rowTotalLabel="PRs by engineer" colTotalLabel="PRs in repo"
+        description="d" totalsPosition="leading"
+      />,
+    );
+    const firstRow = [...container.querySelectorAll("tbody tr")[0].children].map((c) => c.textContent);
+    expect(firstRow).toEqual(["Alice", "3", "1", "3"]); // name, row total, services, cell
+  });
+
   it("shows the description alongside the empty state", () => {
     const empty: Matrix = { rowUsers: [], colHeaders: [], cells: [], rowTotals: [], colTotals: [] };
     render(<MatrixTable matrix={empty} rowAxisLabel="User" colAxisLabel="Repo" rowTotalLabel="PRs by engineer" colTotalLabel="PRs in repo" description="What this table shows." />);
