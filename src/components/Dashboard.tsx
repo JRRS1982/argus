@@ -40,7 +40,7 @@ export default function Dashboard({
       {/* Full width: the matrices are wide, so the viewport is the only useful constraint. */}
       <div className="w-full">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Argus</h1>
-        <p className="text-sm text-gray-500 mb-2">Team PR insights — review times, authorship, and who approves whom.</p>
+        <p className="text-sm text-gray-500 mb-2">What the team shipped — review flow, authorship, and who helps whom.</p>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2 mb-6">
           <RangeToggle range={range} onChange={setRange} />
           {demoAvailable && <DemoToggle on={demo} onChange={setDemo} />}
@@ -75,7 +75,7 @@ export default function Dashboard({
             rowTotalLabel="PRs by engineer"
             colTotalLabel="PRs in repo"
             totalsPosition="leading"
-            description="How many PRs each engineer opened in each repository, counting PRs created inside the selected window above. Merged and still-open PRs count; declined and superseded ones do not. Rows are engineers (alphabetical), columns are the included repositories. 'PRs by engineer' totals a row — that engineer's output across every repo; 'PRs in repo' totals a column — everyone's output in that repo. Services counts the distinct repositories an engineer opened at least one PR in — a measure of breadth rather than volume. Blank means no PRs."
+            description="What each engineer shipped, and where. PRs by engineer is the headline — every PR opened inside the selected window, merged or still open (declined and superseded work is not counted against anyone). Services counts the distinct repositories someone shipped into: breadth of contribution rather than raw volume. The grid behind those two columns breaks the same PRs down per repository, so you can see where an engineer's work actually landed. Blank means no PRs there."
           />
         )}
         {tab === "approvals" && (
@@ -86,7 +86,7 @@ export default function Dashboard({
             rowTotalLabel="Approvals received"
             colTotalLabel="Approvals given"
             highlightRowMax
-            description="Who reviews whose work. Read a row as: of this author's PRs, how many each colleague approved. Rows are PR authors and columns are approvers (both alphabetical); self-approvals are excluded, so the diagonal is greyed out. Each row's highest cell is highlighted — that author's most frequent approver (all tied cells are highlighted). Totals count approvals, not PRs: 'Approvals received' totals a row — how many approvals that author's PRs collected in all (one PR can be approved by several people); 'Approvals given' totals a column — how many approvals that person handed out. The last column counts PRs that were merged with no approval from anyone else: they have no approver to attribute, but they still happened. Declined PRs are ignored; the window above is applied to each PR's creation date, not the approval date."
+            description="Who helps whom get work over the line. Read a row as: of this author's PRs, how many each colleague reviewed and approved. Rows are PR authors and columns are approvers, both alphabetical; self-approvals are excluded, so the diagonal is greyed out. Each row's highest cell is highlighted — that author's most frequent reviewer, and every tied cell is highlighted rather than an arbitrary one. Totals count approvals, not PRs: 'Approvals received' is how many approvals an author's PRs collected in all, since one PR can be approved by several people; 'Approvals given' is how many that person handed out — a direct measure of how much they supported the rest of the team. The last column counts PRs merged with nobody else's approval: there is no reviewer to credit, but the work still happened. Declined PRs are ignored; the window above is applied to each PR's creation date, not the approval date."
           />
         )}
       </div>
