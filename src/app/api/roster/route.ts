@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { getUsers, getRepos, setUserIncluded, setRepoIncluded } from "@/lib/db/queries";
+import { isDemoRequest } from "@/lib/demo/request";
+import { buildDemoDataset } from "@/lib/demo/fixture";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    if (isDemoRequest(req.nextUrl)) {
+      const { users, repos } = buildDemoDataset(new Date().toISOString());
+      return NextResponse.json({ users, repos });
+    }
     const db = getDb();
     return NextResponse.json({ users: getUsers(db), repos: getRepos(db) });
   } catch (err) {

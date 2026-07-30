@@ -4,6 +4,8 @@ import { getUsers, getRepos, getPullRequests, getApprovals } from "@/lib/db/quer
 import { computeLeaderboard } from "@/lib/analytics/leaderboard";
 import { computePrsCreatedMatrix, computeApprovalMatrix } from "@/lib/analytics/matrices";
 import { resolveSinceIso, isInsightsWindow, type InsightsWindow } from "@/lib/window";
+import { isDemoRequest } from "@/lib/demo/request";
+import { buildDemoDataset } from "@/lib/demo/fixture";
 import type { InsightsResponse } from "@/types";
 
 export const runtime = "nodejs";
@@ -18,13 +20,22 @@ export async function GET(req: NextRequest) {
     }
     const window: InsightsWindow = requested ?? "6m";
 
-    const db = getDb();
-    const users = getUsers(db);
-    const repos = getRepos(db);
-    const prs = getPullRequests(db);
-    const approvals = getApprovals(db);
+    // The demo path must not touch SQLite: Vercel's filesystem is read-only, so
+    // opening the database there fails. Same records, same analytics — only the
+    // source differs.
+    const demo = isDemoRequest(req.nextUrl);
+    const generatedAtEarly = new Date().toISOString();
+    const { users, repos, prs, approvals } = demo
+      ? buildDemoDataset(generatedAtEarly)
+      : (() => {
+          const db = getDb();
+          return {
+            users: getUsers(db), repos: getRepos(db),
+            prs: getPullRequests(db), approvals: getApprovals(db),
+          };
+        })();
 
-    const generatedAt = new Date().toISOString();
+    const generatedAt = generatedAtEarly;
     const earliestCreated = prs.reduce<string | null>(
       (min, pr) => (min === null || pr.createdOn < min ? pr.createdOn : min),
       null,

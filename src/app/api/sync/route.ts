@@ -5,6 +5,7 @@ import { getRepos } from "@/lib/db/queries";
 import { getAuthHeader } from "@/lib/bitbucket/client";
 import { fetchPullRequestsUpdatedSince, fetchPullRequestActivity } from "@/lib/bitbucket/pulls";
 import { syncAll, type SyncDeps, type SyncMode } from "@/lib/sync/sync";
+import { isDemoRequest } from "@/lib/demo/request";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,12 @@ export const runtime = "nodejs";
 // ready-for-review times, at the cost of 1 request per PR.
 export async function POST(req: NextRequest) {
   try {
+    if (isDemoRequest(req.nextUrl)) {
+      return NextResponse.json(
+        { error: "Demo mode shows fabricated data — turn it off to sync real PRs." },
+        { status: 400 },
+      );
+    }
     const body = await req.json().catch(() => null);
     const requested = body?.mode;
     if (requested !== undefined && requested !== "fast" && requested !== "deep") {
