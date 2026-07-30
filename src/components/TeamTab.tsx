@@ -6,14 +6,14 @@ import type { UserRecord, RepoRecord } from "@/types";
 type Roster = { users: UserRecord[]; repos: RepoRecord[] };
 
 export default function TeamTab({
-  roster, onRosterChange,
-}: { roster: Roster; onRosterChange: (r: Roster) => void }) {
+  roster, onRosterChange, demo,
+}: { roster: Roster; onRosterChange: (r: Roster) => void; demo: boolean }) {
   const [busy, setBusy] = useState<null | "discover" | "sync">(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reloadRoster = async () => {
-    const res = await fetch("/api/roster");
+    const res = await fetch(`/api/roster${demo ? "?demo=1" : ""}`);
     onRosterChange(await res.json());
   };
 
@@ -44,11 +44,13 @@ export default function TeamTab({
   return (
     <div className="space-y-6">
       <div className="flex gap-3 items-center">
-        <button onClick={() => run("discover")} disabled={busy !== null}
+        <button onClick={() => run("discover")} disabled={busy !== null || demo}
+          title={demo ? "Turn off demo data to talk to Bitbucket" : undefined}
           className="px-4 py-2 rounded bg-gray-800 text-white disabled:opacity-50">
           {busy === "discover" ? "Discovering…" : "Discover workspace"}
         </button>
-        <button onClick={() => run("sync")} disabled={busy !== null}
+        <button onClick={() => run("sync")} disabled={busy !== null || demo}
+          title={demo ? "Turn off demo data to talk to Bitbucket" : undefined}
           className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">
           {busy === "sync" ? "Refreshing…" : "Refresh data"}
         </button>
