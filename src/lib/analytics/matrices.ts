@@ -1,8 +1,6 @@
 import type { Matrix, PullRequestRecord, ApprovalRecord, RepoRecord, UserRecord } from "@/types";
 import { buildPrScope, isInScope } from "./scope";
-
-const byDisplayName = (a: { displayName: string }, b: { displayName: string }): number =>
-  a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+import { byDisplayName } from "./sort";
 
 const zeros = (rows: number, cols: number): number[][] =>
   Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0));

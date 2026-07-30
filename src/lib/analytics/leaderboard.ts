@@ -1,6 +1,7 @@
 import type { LeaderboardRow, LeaderboardPR, PullRequestRecord, RepoRecord, UserRecord } from "@/types";
 import { reviewDurationMs } from "./duration";
 import { buildPrScope, isInScope } from "./scope";
+import { byDisplayName } from "./sort";
 
 // Median of a non-empty list; robust to the long-tail PRs that skew the mean.
 const medianMs = (values: number[]): number => {
@@ -65,6 +66,8 @@ export const computeLeaderboard = (
     });
   }
 
-  rows.sort((a, b) => a.medianReviewMs - b.medianReviewMs); // fastest first, by median (outlier-resistant)
+  // Alphabetical, not fastest-first: this is a record of contribution, not a ranking.
+  // Median and average remain as columns for anyone who wants them.
+  rows.sort(byDisplayName);
   return rows;
 };
