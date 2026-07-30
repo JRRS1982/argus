@@ -27,11 +27,14 @@ export default function MatrixTable({
   const leading = totalsPosition === "leading";
   const trailingCols = matrix.extraColumn ? 2 : 1;
   // Sticky offset for the totals column must match the row-header width below.
+  // Both are needed only in leading mode: trailing mode keeps auto width and no stickiness,
+  // exactly as before this prop existed, so the Approvals matrix stays pixel-for-pixel unchanged.
   const stickyTotal = leading ? "sticky left-52 z-10" : "";
+  const rowHeaderWidth = leading ? "w-52 z-20" : "";
 
   const totalHeaders = (
     <>
-      <th className={`border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap ${stickyTotal}`}>
+      <th className={`border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap${stickyTotal ? ` ${stickyTotal}` : ""}`}>
         {rowTotalLabel}
       </th>
       {matrix.extraColumn && (
@@ -44,7 +47,7 @@ export default function MatrixTable({
 
   const totalCells = (r: number) => (
     <>
-      <td className={`border px-3 py-2 text-center font-semibold bg-gray-50 ${stickyTotal}`}>
+      <td className={`border px-3 py-2 text-center font-semibold bg-gray-50${stickyTotal ? ` ${stickyTotal}` : ""}`}>
         {matrix.rowTotals[r]}
       </td>
       {matrix.extraColumn && (
@@ -57,7 +60,9 @@ export default function MatrixTable({
 
   const totalFooters = (
     <>
-      <td className={`border px-3 py-2 bg-gray-100 ${stickyTotal}`} />
+      {/* Unlike the header/cell totals above, this spacer had no background before this prop
+          existed — only give it one in leading mode, where it also needs to stick. */}
+      <td className={leading ? `border px-3 py-2 bg-gray-100 ${stickyTotal}` : "border px-3 py-2"} />
       {matrix.extraColumn && <td className="border px-3 py-2" />}
     </>
   );
@@ -84,7 +89,7 @@ export default function MatrixTable({
                 {!leading && <th colSpan={trailingCols} className="border-0" />}
               </tr>
               <tr>
-                <th className="sticky left-0 z-20 bg-gray-100 border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap w-52">
+                <th className={`sticky left-0 bg-gray-100 border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>
                   ↓ {rowAxisLabel}
                 </th>
                 {leading && totalHeaders}
@@ -99,7 +104,7 @@ export default function MatrixTable({
                 const leader = highlightRowMax ? rowLeaderValue(matrix.cells[r]) : null;
                 return (
                 <tr key={u.accountId}>
-                  <th className="sticky left-0 z-20 bg-white border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap w-52">{u.displayName}</th>
+                  <th className={`sticky left-0 bg-white border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>{u.displayName}</th>
                   {leading && totalCells(r)}
                   {matrix.colHeaders.map((c, ci) => {
                     // A cell where the row and column are the same person is structurally
@@ -137,7 +142,7 @@ export default function MatrixTable({
                 );
               })}
               <tr>
-                <th className="sticky left-0 z-20 bg-gray-100 border px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap w-52">
+                <th className={`sticky left-0 bg-gray-100 border px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>
                   {colTotalLabel}
                 </th>
                 {leading && totalFooters}
