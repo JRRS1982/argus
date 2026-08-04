@@ -79,7 +79,10 @@ export default function MatrixTable({
               {/* Axis banner: names what the columns are, so the grid can't be read transposed. */}
               <tr>
                 <th className="sticky left-0 bg-gray-100 border-0" />
-                {leading && <th colSpan={trailingCols} className="border-0" />}
+                {/* Leading mode only: without a background and the same sticky offset as the
+                    totals cells beneath it, this spacer is transparent and unpinned, so the
+                    scrolling column banner slides through the gap above the pinned totals. */}
+                {leading && <th colSpan={trailingCols} className={`border-0 bg-gray-100 ${stickyTotal}`} />}
                 <th
                   colSpan={matrix.colHeaders.length}
                   className="border px-3 py-1 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500"

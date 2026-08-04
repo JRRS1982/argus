@@ -21,6 +21,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  // The client never appends `?demo=1` to this write — the UI disables the roster
+  // checkboxes instead — so this guard is defence-in-depth, not the active protection.
   if (isDemoRequest(req.nextUrl)) {
     return NextResponse.json(
       { error: "Demo mode shows fabricated data — turn it off to change the roster." },

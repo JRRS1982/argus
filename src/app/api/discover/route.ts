@@ -10,6 +10,8 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
+    // The client never appends `?demo=1` to this write — the UI disables the Discover
+    // button instead — so this guard is defence-in-depth, not the active protection.
     if (isDemoRequest(req.nextUrl)) {
       return NextResponse.json(
         { error: "Demo mode shows fabricated data — turn it off to discover the workspace." },

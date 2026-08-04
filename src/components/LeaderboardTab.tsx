@@ -21,7 +21,8 @@ export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
           How long each engineer&apos;s work stays in review before it lands, across PRs merged to main inside the
           window above. Listed alphabetically — this is a record of what everyone shipped, not a race. Median is the
           figure to trust, since a couple of long-lived PRs cannot skew it; the average sits alongside for
-          comparison. Click a row to see that engineer&apos;s individual PRs.
+          comparison. Click a row to see that engineer&apos;s individual PRs, listed slowest first so the longest
+          reviews are easiest to spot.
         </p>
         <p className="text-gray-500">
           <span className="font-medium text-gray-700">What is actually measured:</span>{" "}
