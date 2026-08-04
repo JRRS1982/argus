@@ -24,15 +24,26 @@ export default function Dashboard({
   const [demo, setDemo] = useState(demoDefaultOn);
 
   useEffect(() => {
+    // A non-ok response (e.g. demo-off hitting a read-only filesystem) still resolves
+    // its body to JSON — an `{ error }` object, not a Roster — so `r.ok` must gate
+    // whether we touch state at all. On failure, keep whatever roster we already had
+    // rather than setting it to null: TeamTab maps over roster.users/repos directly.
     fetch(`/api/roster${demo ? "?demo=1" : ""}`)
-      .then((r) => r.json()).then(setRoster).catch(() => {});
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => v && setRoster(v))
+      .catch(() => {});
   }, [demo]);
 
   // Recompute insights on load, on range change, when switching tabs (cheap; local DB),
   // and when demo mode toggles.
   useEffect(() => {
+    // Same reasoning as the roster fetch above: only adopt a body that came from a
+    // successful response, so a 500 leaves `insights` null instead of storing an
+    // `{ error }` object that downstream code would treat as real data.
     fetch(`/api/insights?window=${range}${demo ? "&demo=1" : ""}`)
-      .then((r) => r.json()).then(setInsights).catch(() => {});
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => v && setInsights(v))
+      .catch(() => {});
   }, [tab, range, demo]);
 
   return (

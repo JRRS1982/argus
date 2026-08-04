@@ -14,7 +14,9 @@ export default function TeamTab({
 
   const reloadRoster = async () => {
     const res = await fetch(`/api/roster${demo ? "?demo=1" : ""}`);
-    onRosterChange(await res.json());
+    // A non-ok body still parses as JSON (an `{ error }` object) — only adopt it on
+    // success, and keep the existing roster otherwise rather than clobbering it.
+    if (res.ok) onRosterChange(await res.json());
   };
 
   const run = async (kind: "discover" | "sync") => {
