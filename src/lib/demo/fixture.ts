@@ -78,6 +78,8 @@ const TITLES = [
 ];
 
 // Weighted choice over repo indices; weights of 0 are never selected.
+// Invariant: every profile must have at least one non-zero repo weight, or the
+// findIndex fallback below returns -1 and REPOS[-1] throws.
 const pickRepoIndex = (rand: () => number, weights: number[]): number => {
   const total = weights.reduce((s, w) => s + w, 0);
   let n = rand() * total;
@@ -106,9 +108,17 @@ export const buildDemoDataset = (nowIso: string): DemoDataset => {
     for (let i = 0; i < profile.prCount; i += 1) {
       const repoIdx = pickRepoIndex(rand, profile.repoWeights);
       const repo = REPOS[repoIdx];
-      const ageDays = intBetween(rand, 0, profile.historyDays);
-      const createdMs = now - ageDays * DAY_MS - intBetween(rand, 0, 23) * 3_600_000;
       const openDays = intBetween(rand, profile.reviewDays[0], profile.reviewDays[1]);
+
+      // The last couple of PRs per profile are drawn so their review period has not
+      // elapsed yet — age is forced strictly below the review length, guaranteeing a
+      // close time after `now`. Without this, ageDays and openDays were independent
+      // draws, so with SEED fixed nothing was ever open, at any instant.
+      const isRecentSlot = i >= profile.prCount - Math.min(2, profile.prCount);
+      const ageDays = isRecentSlot
+        ? intBetween(rand, 0, Math.max(0, openDays - 1))
+        : intBetween(rand, 0, profile.historyDays);
+      const createdMs = now - ageDays * DAY_MS - intBetween(rand, 0, 23) * 3_600_000;
       const closedMs = createdMs + openDays * DAY_MS;
 
       // Anything not yet closed by `now` is still open; everything else merged.

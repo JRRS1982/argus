@@ -78,4 +78,23 @@ describe("buildDemoDataset", () => {
     const board = computeLeaderboard(later.prs, later.repos, later.users, since);
     expect(board.length).toBeGreaterThan(0);
   });
+
+  it("contains at least one genuinely open PR", () => {
+    const d = buildDemoDataset(NOW);
+    expect(d.prs.some((p) => p.state === "OPEN")).toBe(true);
+  });
+
+  it("gives open PRs a null mergedOn, preserving the merged/open invariant", () => {
+    const d = buildDemoDataset(NOW);
+    for (const pr of d.prs.filter((p) => p.state === "OPEN")) {
+      expect(pr.mergedOn).toBeNull();
+    }
+  });
+
+  it("surfaces at least one open PR on the leaderboard's Open column", () => {
+    const d = buildDemoDataset(NOW);
+    const since = sixMonthsAgoIso(NOW);
+    const board = computeLeaderboard(d.prs, d.repos, d.users, since);
+    expect(board.some((row) => row.openPrCount > 0)).toBe(true);
+  });
 });
