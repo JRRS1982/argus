@@ -1,6 +1,32 @@
 # Argus — PR Review Dashboard
 
+**[Live demo → argus-blush-chi.vercel.app](https://argus-blush-chi.vercel.app/)**
+
 A local Next.js dashboard that pulls Bitbucket pull-request data for a team and presents four analytical views: a team roster, a review-time leaderboard, a PRs-created matrix, and an approval matrix. All data is cached in a local SQLite database so subsequent refreshes are incremental.
+
+The live link above runs with no Bitbucket credentials, so it serves [demo mode](#demo-mode): a seeded fixture of five invented engineers across five invented repositories. Every figure on it is fabricated — no real people, repositories or review times. The analytics computing those figures are the same ones that run against real data.
+
+## Screenshots
+
+All taken from the live demo.
+
+### Review-time leaderboard
+
+How long each engineer's work sits in review before it lands. Listed alphabetically rather than ranked by speed — the median and average are there to read, not to compete over. Rows expand to the individual PRs behind them.
+
+![Review-time leaderboard: five engineers listed alphabetically with median and average review times, merged and open PR counts](docs/screenshots/leaderboard.png)
+
+### PRs created
+
+What each engineer shipped and where. The headline PR count sits immediately beside the name, followed by Services — the number of distinct repositories they shipped into, a measure of breadth rather than volume. The grid behind those two columns breaks the same PRs down per repository.
+
+![PRs created matrix: engineers as rows, repositories as columns, with PRs by engineer and Services columns leading the grid](docs/screenshots/prs-created.png)
+
+### Approvals
+
+Who helps whom get work over the line. Read a row as: of this author's PRs, how many each colleague reviewed. Self-approvals are excluded so the diagonal is greyed out, and each row's most frequent reviewer is highlighted. The final column counts PRs merged with nobody else's approval — work that happened but has no reviewer to credit.
+
+![Approvals matrix: PR authors as rows, approvers as columns, with the diagonal greyed out and each row's top approver highlighted](docs/screenshots/approvals.png)
 
 ## Stack
 
@@ -70,7 +96,7 @@ After the first full refresh, subsequent refreshes are incremental (only new act
 
 ## Demo mode
 
-No Bitbucket credentials? Argus still runs. With no `BITBUCKET_EMAIL`/`BITBUCKET_API_TOKEN` set, a **Demo data** toggle appears beside the date-range toggle, and it defaults to on — this is what lets the dashboard deploy publicly (e.g. to Vercel) with nothing to configure.
+No Bitbucket credentials? Argus still runs. With no `BITBUCKET_EMAIL`/`BITBUCKET_API_TOKEN` set, a **Demo data** toggle appears beside the date-range toggle, and it defaults to on — this is what lets the dashboard deploy publicly with nothing to configure. [argus-blush-chi.vercel.app](https://argus-blush-chi.vercel.app/) is exactly that: a Vercel deployment with no environment variables set.
 
 - Demo mode swaps the data source for a seeded, in-memory fixture of 5 engineers and 5 repos — the same record types the database returns, run through the same analytics functions, so the demo can't drift from real behaviour.
 - It never touches SQLite: nothing is read or written to `data/argus.sqlite`, which is what makes it safe on a read-only filesystem.
