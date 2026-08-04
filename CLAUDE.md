@@ -63,7 +63,8 @@ from real behaviour.
 - **Availability**: shown in development, and on any instance with no Bitbucket
   credentials. Never shown on a credentialed production instance.
 - **Default**: on when there are no credentials, off otherwise.
-- **Writes**: Discover and Refresh are disabled while demo mode is on.
+- **Writes**: Discover, Refresh and roster include/exclude edits are all disabled
+  while demo mode is on — at the UI and at the API.
 - **Storage**: none. Demo data is generated per request and never written to SQLite,
   which is what makes a read-only host like Vercel work.
 
