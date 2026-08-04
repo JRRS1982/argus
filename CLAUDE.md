@@ -12,11 +12,11 @@ A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a loc
 ## The four tabs
 
 - **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
-- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
-- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with row/column totals and a Services column (distinct repos touched)
+- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows (sorted slowest-first); flagged PRs (`*`) used creation time as fallback
+- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with the row total (PR count) placed immediately beside the engineer name rather than trailing the grid, plus a Services column (distinct repos touched)
 - **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded, diagonal greyed out, each row's top approver highlighted), plus a "Merged, no approval" column
 
-Engineer name columns are sorted alphabetically (case-insensitive) in both matrices; both matrices label their axes; each tab carries a short description above its table. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
+Engineer names are sorted alphabetically (case-insensitive) everywhere they appear — both matrices and the leaderboard, which is a record of contribution rather than a speed ranking and carries no rank column. Both matrices label their axes; each tab carries a short description above its table. A highlights strip above the tabs calls out a few engineers by name each visit — broadest reach, most reviews given, quickest to land — recomputed from whichever window and data source (real or demo) is active. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
 
 ## Key metric definitions
 
@@ -37,6 +37,7 @@ Engineer name columns are sorted alphabetically (case-insensitive) in both matri
 | `BITBUCKET_WORKSPACE` | Yes | `mvfglobal` | Bitbucket workspace slug |
 | `BITBUCKET_PROJECT_KEY` | No | (all projects) | Limit discovery to one project key |
 | `ARGUS_DB_PATH` | No | `data/argus.sqlite` | Override SQLite cache path |
+| _(none)_ | — | — | With no `BITBUCKET_EMAIL`/`BITBUCKET_API_TOKEN`, the app runs in demo mode: fabricated data, no Bitbucket calls, no SQLite access |
 
 Config is read from `src/config/index.ts`.
 
@@ -51,6 +52,24 @@ npm run dev                         # http://localhost:3000
 Then on the Team tab: **Discover workspace** → tick the users/repos you want → **Refresh data**.
 
 Discovery adds everything it finds as **excluded**, so a first run starts with nothing selected — the workspace can hold hundreds of repos, and only ticked ones are fetched. Re-running Discover never changes a choice you have already made.
+
+## Demo mode
+
+A **Demo data** toggle sits beside the window toggle. It swaps the data source for a
+seeded, in-memory fixture of 5 engineers and 5 repos — the same record types the
+database returns, fed through the same analytics functions, so the demo cannot drift
+from real behaviour.
+
+- **Availability**: shown in development, and on any instance with no Bitbucket
+  credentials. Never shown on a credentialed production instance.
+- **Default**: on when there are no credentials, off otherwise.
+- **Writes**: Discover, Refresh and roster include/exclude edits are all disabled
+  while demo mode is on — at the UI and at the API.
+- **Storage**: none. Demo data is generated per request and never written to SQLite,
+  which is what makes a read-only host like Vercel work.
+
+Dates in the fixture are generated relative to now, so both window settings always
+have data.
 
 ## Data flow
 

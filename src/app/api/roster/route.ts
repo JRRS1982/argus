@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { getUsers, getRepos, setUserIncluded, setRepoIncluded } from "@/lib/db/queries";
+import { isDemoRequest } from "@/lib/demo/request";
+import { buildDemoDataset } from "@/lib/demo/fixture";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    if (isDemoRequest(req.nextUrl)) {
+      const { users, repos } = buildDemoDataset(new Date().toISOString());
+      return NextResponse.json({ users, repos });
+    }
     const db = getDb();
     return NextResponse.json({ users: getUsers(db), repos: getRepos(db) });
   } catch (err) {
@@ -15,6 +21,14 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  // The client never appends `?demo=1` to this write — the UI disables the roster
+  // checkboxes instead — so this guard is defence-in-depth, not the active protection.
+  if (isDemoRequest(req.nextUrl)) {
+    return NextResponse.json(
+      { error: "Demo mode shows fabricated data — turn it off to change the roster." },
+      { status: 400 },
+    );
+  }
   const body = await req.json().catch(() => null);
   if (!body || (body.kind !== "user" && body.kind !== "repo") || typeof body.id !== "string" || typeof body.included !== "boolean") {
     return NextResponse.json({ error: "Expected { kind: 'user'|'repo', id: string, included: boolean }" }, { status: 400 });

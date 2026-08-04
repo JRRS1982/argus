@@ -9,7 +9,7 @@ const rowLeaderValue = (row: number[]): number | null => {
 
 export default function MatrixTable({
   matrix, rowAxisLabel, colAxisLabel, rowTotalLabel, colTotalLabel, description,
-  highlightRowMax = false,
+  highlightRowMax = false, totalsPosition = "trailing",
 }: {
   matrix: Matrix;
   rowAxisLabel: string;
@@ -20,9 +20,53 @@ export default function MatrixTable({
   colTotalLabel: string;
   description: string;
   highlightRowMax?: boolean;
+  // "leading" puts the row totals next to the engineer name, where the headline
+  // number belongs when the point of the table is output rather than distribution.
+  totalsPosition?: "leading" | "trailing";
 }) {
-  // Total, plus the optional extra column, sit outside the labelled column axis.
+  const leading = totalsPosition === "leading";
   const trailingCols = matrix.extraColumn ? 2 : 1;
+  // Sticky offset for the totals column must match the row-header width below.
+  // Both are needed only in leading mode: trailing mode keeps auto width and no stickiness,
+  // exactly as before this prop existed, so the Approvals matrix stays pixel-for-pixel unchanged.
+  const stickyTotal = leading ? "sticky left-52 z-10" : "";
+  const rowHeaderWidth = leading ? "w-52 z-20" : "";
+
+  const totalHeaders = (
+    <>
+      <th className={`border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap${stickyTotal ? ` ${stickyTotal}` : ""}`}>
+        {rowTotalLabel}
+      </th>
+      {matrix.extraColumn && (
+        <th className="border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap">
+          {matrix.extraColumn.label}
+        </th>
+      )}
+    </>
+  );
+
+  const totalCells = (r: number) => (
+    <>
+      <td className={`border px-3 py-2 text-center font-semibold bg-gray-50${stickyTotal ? ` ${stickyTotal}` : ""}`}>
+        {matrix.rowTotals[r]}
+      </td>
+      {matrix.extraColumn && (
+        <td className="border px-3 py-2 text-center font-semibold bg-gray-50">
+          {matrix.extraColumn.values[r]}
+        </td>
+      )}
+    </>
+  );
+
+  const totalFooters = (
+    <>
+      {/* Unlike the header/cell totals above, this spacer had no background before this prop
+          existed — only give it one in leading mode, where it also needs to stick. */}
+      <td className={leading ? `border px-3 py-2 bg-gray-100 ${stickyTotal}` : "border px-3 py-2"} />
+      {matrix.extraColumn && <td className="border px-3 py-2" />}
+    </>
+  );
+
   return (
     <section>
       <p className="text-sm text-gray-600 mb-3 max-w-4xl">{description}</p>
@@ -35,29 +79,27 @@ export default function MatrixTable({
               {/* Axis banner: names what the columns are, so the grid can't be read transposed. */}
               <tr>
                 <th className="sticky left-0 bg-gray-100 border-0" />
+                {/* Leading mode only: without a background and the same sticky offset as the
+                    totals cells beneath it, this spacer is transparent and unpinned, so the
+                    scrolling column banner slides through the gap above the pinned totals. */}
+                {leading && <th colSpan={trailingCols} className={`border-0 bg-gray-100 ${stickyTotal}`} />}
                 <th
                   colSpan={matrix.colHeaders.length}
                   className="border px-3 py-1 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500"
                 >
                   {colAxisLabel} →
                 </th>
-                <th colSpan={trailingCols} className="border-0" />
+                {!leading && <th colSpan={trailingCols} className="border-0" />}
               </tr>
               <tr>
-                <th className="sticky left-0 bg-gray-100 border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap">
+                <th className={`sticky left-0 bg-gray-100 border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>
                   ↓ {rowAxisLabel}
                 </th>
+                {leading && totalHeaders}
                 {matrix.colHeaders.map((c) => (
                   <th key={c.key} className="border px-3 py-2 text-gray-700 font-medium whitespace-nowrap">{c.label}</th>
                 ))}
-                <th className="border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap">
-                  {rowTotalLabel}
-                </th>
-                {matrix.extraColumn && (
-                  <th className="border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap">
-                    {matrix.extraColumn.label}
-                  </th>
-                )}
+                {!leading && totalHeaders}
               </tr>
             </thead>
             <tbody>
@@ -65,7 +107,8 @@ export default function MatrixTable({
                 const leader = highlightRowMax ? rowLeaderValue(matrix.cells[r]) : null;
                 return (
                 <tr key={u.accountId}>
-                  <th className="sticky left-0 bg-white border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap">{u.displayName}</th>
+                  <th className={`sticky left-0 bg-white border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>{u.displayName}</th>
+                  {leading && totalCells(r)}
                   {matrix.colHeaders.map((c, ci) => {
                     // A cell where the row and column are the same person is structurally
                     // impossible (self-approval), not merely empty — grey it out to say so.
@@ -97,22 +140,19 @@ export default function MatrixTable({
                       </td>
                     );
                   })}
-                  <td className="border px-3 py-2 text-center font-semibold bg-gray-50">{matrix.rowTotals[r]}</td>
-                  {matrix.extraColumn && (
-                    <td className="border px-3 py-2 text-center font-semibold bg-gray-50">{matrix.extraColumn.values[r]}</td>
-                  )}
+                  {!leading && totalCells(r)}
                 </tr>
                 );
               })}
               <tr>
-                <th className="sticky left-0 bg-gray-100 border px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap">
+                <th className={`sticky left-0 bg-gray-100 border px-3 py-2 text-left font-semibold text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>
                   {colTotalLabel}
                 </th>
+                {leading && totalFooters}
                 {matrix.colTotals.map((t, i) => (
                   <td key={i} className="border px-3 py-2 text-center font-semibold bg-gray-50">{t}</td>
                 ))}
-                <td className="border px-3 py-2" />
-                {matrix.extraColumn && <td className="border px-3 py-2" />}
+                {!leading && totalFooters}
               </tr>
             </tbody>
           </table>

@@ -24,19 +24,19 @@ const SINCE = "2026-01-01T00:00:00.000Z";
 const DAY = 86_400_000;
 
 describe("computeLeaderboard", () => {
-  it("averages each author's merged-to-main PR review times and sorts fastest-first", () => {
+  it("averages each author's merged-to-main PR review times and orders rows alphabetically", () => {
     const prs = [
       pr({ id: 1, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }), // 1d
       pr({ id: 2, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-04T00:00:00.000Z" }), // 3d -> avg 2d
       pr({ id: 3, authorAccountId: "u2", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T12:00:00.000Z" }), // 1.5d
     ];
     const board = computeLeaderboard(prs, repos, users, SINCE);
-    expect(board.map((r) => r.displayName)).toEqual(["Bob", "Alice"]); // Bob 1.5d < Alice 2d
-    expect(board[1].prCount).toBe(2);
-    expect(board[1].averageReviewMs).toBe(2 * DAY);
+    expect(board.map((r) => r.displayName)).toEqual(["Alice", "Bob"]); // alphabetical, despite Bob (1.5d) being faster than Alice (2d)
+    expect(board[0].prCount).toBe(2);
+    expect(board[0].averageReviewMs).toBe(2 * DAY);
   });
 
-  it("reports a median that ignores outliers, and ranks by it rather than the average", () => {
+  it("reports a median that ignores outliers", () => {
     const prs = [
       // Alice: 1d, 1d, 30d -> median 1d, average ~10.7d (one stale PR skews the mean)
       pr({ id: 1, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
@@ -53,7 +53,6 @@ describe("computeLeaderboard", () => {
     expect(alice.medianReviewMs).toBe(1 * DAY);          // odd count -> middle value
     expect(bob.medianReviewMs).toBe(3 * DAY);            // even count -> mean of the two middles
     expect(alice.averageReviewMs).toBeGreaterThan(bob.averageReviewMs);
-    expect(board.map((r) => r.displayName)).toEqual(["Alice", "Bob"]); // ranked by median, not average
   });
 
   it("honours repo include/exclude toggles, like the matrices do", () => {
@@ -110,5 +109,30 @@ describe("computeLeaderboard", () => {
     const [alice] = computeLeaderboard(prs, repos, users, SINCE);
     expect(alice.prs.map((p) => p.id)).toEqual([2, 1]); // slowest first
     expect(alice.prs[0].readyIsFallback).toBe(true);
+  });
+
+  it("orders engineers by name, not by speed, so the table is not a scoreboard", () => {
+    const repos: RepoRecord[] = [
+      { slug: "r1", name: "r1", projectKey: null, mainBranch: "main", included: true },
+    ];
+    const users: UserRecord[] = [
+      { accountId: "u1", displayName: "Zara", included: true },
+      { accountId: "u2", displayName: "adam", included: true },
+      { accountId: "u3", displayName: "Mira", included: true },
+    ];
+    const pr = (id: number, author: string, days: number): PullRequestRecord => ({
+      id, repoSlug: "r1", authorAccountId: author, title: `pr ${id}`, state: "MERGED",
+      createdOn: "2026-01-01T00:00:00.000Z",
+      readyForReviewOn: "2026-01-01T00:00:00.000Z",
+      readyIsFallback: true,
+      mergedOn: new Date(Date.UTC(2026, 0, 1 + days)).toISOString(),
+      destinationBranch: "main",
+      url: "https://example.com",
+    });
+    // Zara is fastest, adam slowest — so speed order and name order disagree.
+    const prs = [pr(1, "u1", 1), pr(2, "u2", 9), pr(3, "u3", 5)];
+
+    const rows = computeLeaderboard(prs, repos, users, "2025-01-01T00:00:00.000Z");
+    expect(rows.map((r) => r.displayName)).toEqual(["adam", "Mira", "Zara"]);
   });
 });
