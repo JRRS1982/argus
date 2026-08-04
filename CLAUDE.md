@@ -37,6 +37,7 @@ Engineer name columns are sorted alphabetically (case-insensitive) in both matri
 | `BITBUCKET_WORKSPACE` | Yes | `mvfglobal` | Bitbucket workspace slug |
 | `BITBUCKET_PROJECT_KEY` | No | (all projects) | Limit discovery to one project key |
 | `ARGUS_DB_PATH` | No | `data/argus.sqlite` | Override SQLite cache path |
+| _(none)_ | — | — | With no `BITBUCKET_EMAIL`/`BITBUCKET_API_TOKEN`, the app runs in demo mode: fabricated data, no Bitbucket calls, no SQLite access |
 
 Config is read from `src/config/index.ts`.
 
@@ -51,6 +52,23 @@ npm run dev                         # http://localhost:3000
 Then on the Team tab: **Discover workspace** → tick the users/repos you want → **Refresh data**.
 
 Discovery adds everything it finds as **excluded**, so a first run starts with nothing selected — the workspace can hold hundreds of repos, and only ticked ones are fetched. Re-running Discover never changes a choice you have already made.
+
+## Demo mode
+
+A **Demo data** toggle sits beside the window toggle. It swaps the data source for a
+seeded, in-memory fixture of 5 engineers and 5 repos — the same record types the
+database returns, fed through the same analytics functions, so the demo cannot drift
+from real behaviour.
+
+- **Availability**: shown in development, and on any instance with no Bitbucket
+  credentials. Never shown on a credentialed production instance.
+- **Default**: on when there are no credentials, off otherwise.
+- **Writes**: Discover and Refresh are disabled while demo mode is on.
+- **Storage**: none. Demo data is generated per request and never written to SQLite,
+  which is what makes a read-only host like Vercel work.
+
+Dates in the fixture are generated relative to now, so both window settings always
+have data.
 
 ## Data flow
 
