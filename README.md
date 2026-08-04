@@ -14,7 +14,7 @@ A local Next.js dashboard that pulls Bitbucket pull-request data for a team and 
 | Tab | What it shows |
 |-----|---------------|
 | **Team** | Team roster with include/exclude toggles for users and repos; Discover and Refresh data controls |
-| **Review-time leaderboard** | Average and per-PR in-review duration per engineer, sorted fastest-first; expandable rows show individual PRs |
+| **Review-time leaderboard** | Median and average in-review duration per engineer, listed alphabetically; expandable rows show individual PRs, slowest first |
 | **PRs created** | Matrix of PRs created — engineers (rows) × projects/repos (columns) — over the last 6 months, with row/column totals |
 | **Approvals** | Matrix of approvals — PR authors (rows) × approvers (columns) — over the last 6 months: how many of each author's PRs each colleague approved; self-approvals are excluded |
 
@@ -67,6 +67,16 @@ Open [http://localhost:3000](http://localhost:3000).
 4. Click **Refresh data** — Argus fetches PR activity for all included users/repos and populates the SQLite cache.
 
 After the first full refresh, subsequent refreshes are incremental (only new activity is fetched).
+
+## Demo mode
+
+No Bitbucket credentials? Argus still runs. With no `BITBUCKET_EMAIL`/`BITBUCKET_API_TOKEN` set, a **Demo data** toggle appears beside the date-range toggle, and it defaults to on — this is what lets the dashboard deploy publicly (e.g. to Vercel) with nothing to configure.
+
+- Demo mode swaps the data source for a seeded, in-memory fixture of 5 engineers and 5 repos — the same record types the database returns, run through the same analytics functions, so the demo can't drift from real behaviour.
+- It never touches SQLite: nothing is read or written to `data/argus.sqlite`, which is what makes it safe on a read-only filesystem.
+- Discover, Refresh data, and the roster checkboxes are all disabled while it's on, since there is no real workspace to modify.
+- Dates in the fixture are generated relative to the current time, so both **Last 6 months** and **All time** always show data.
+- On a deployment with real credentials, the toggle never appears — demo mode is only ever available when there is nothing real to protect.
 
 ## Data persistence
 

@@ -12,11 +12,11 @@ A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a loc
 ## The four tabs
 
 - **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
-- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows; flagged PRs (`*`) used creation time as fallback
-- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with row/column totals and a Services column (distinct repos touched)
+- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows (sorted slowest-first); flagged PRs (`*`) used creation time as fallback
+- **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with the row total (PR count) placed immediately beside the engineer name rather than trailing the grid, plus a Services column (distinct repos touched)
 - **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded, diagonal greyed out, each row's top approver highlighted), plus a "Merged, no approval" column
 
-Engineer name columns are sorted alphabetically (case-insensitive) in both matrices; both matrices label their axes; each tab carries a short description above its table. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
+Engineer names are sorted alphabetically (case-insensitive) everywhere they appear — both matrices and the leaderboard, which is a record of contribution rather than a speed ranking and carries no rank column. Both matrices label their axes; each tab carries a short description above its table. A highlights strip above the tabs calls out a few engineers by name each visit — broadest reach, most reviews given, quickest to land — recomputed from whichever window and data source (real or demo) is active. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
 
 ## Key metric definitions
 
