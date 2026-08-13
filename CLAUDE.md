@@ -11,12 +11,12 @@ A local Next.js 16 + TypeScript dashboard that caches Bitbucket PR data in a loc
 
 ## The four tabs
 
-- **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace and Refresh data controls
+- **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace, Refresh data and Backfill all history controls
 - **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows (sorted slowest-first); flagged PRs (`*`) used creation time as fallback
 - **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with the row total (PR count) placed immediately beside the engineer name rather than trailing the grid, plus a Services column (distinct repos touched)
 - **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded, diagonal greyed out, each row's top approver highlighted), plus a "Merged, no approval" column
 
-Engineer names are sorted alphabetically (case-insensitive) everywhere they appear — both matrices and the leaderboard, which is a record of contribution rather than a speed ranking and carries no rank column. Both matrices label their axes; each tab carries a short description above its table. A highlights strip above the tabs calls out a few engineers by name each visit — broadest reach, most reviews given, quickest to land — recomputed from whichever window and data source (real or demo) is active. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
+Engineer names are sorted alphabetically (case-insensitive) everywhere they appear — both matrices and the leaderboard, which is a record of contribution rather than a speed ranking and carries no rank column. Both matrices label their axes; each tab carries a short description above its table. A highlights strip above the tabs bookends recognition with context: it leads with a "PRs considered" count card (the PRs-created row totals — the number that visibly moves after a refresh or backfill, always shown even at 0), then calls out a few engineers by name — broadest reach, most reviews given, quickest to land — and ends with a "Data refreshed" card showing the newest sync stamp among included repos ("Never" until a first sync; demo mode shows its per-request generation instant). All of it is recomputed from whichever window and data source (real or demo) is active. A **Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
 
 ## Key metric definitions
 
@@ -75,7 +75,7 @@ have data.
 
 1. **Discover** (`POST /api/discover`) — queries Bitbucket for all workspace users and repos; stores them in SQLite as candidates.
 2. **Roster** (`GET /api/roster`) — returns current include/exclude state for users and repos.
-3. **Sync** (`POST /api/sync`) — fetches PR activity for all included users/repos over the last 6 months; upserts into SQLite; incremental (only new activity fetched on subsequent runs).
+3. **Sync** (`POST /api/sync`) — fetches PR activity for all included repos; upserts into SQLite; incremental (only activity since the last sync is fetched, and a repo's very first sync reaches back 6 months). Body `{ backfill: true }` ignores the cursor and fetches each repo's entire PR history — required once for **All time** to be complete. The UI exposes this as **Backfill all history** on the Team tab.
 4. **Insights** (`GET /api/insights`) — reads SQLite and returns leaderboard rows, PRs-created matrix, and approval matrix to the frontend.
 
 ## SQLite schema

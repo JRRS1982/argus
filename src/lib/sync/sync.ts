@@ -5,7 +5,7 @@ import {
   deriveReadyForReview, extractApprovals,
   fetchPullRequestsUpdatedSince, fetchPullRequestActivity,
 } from "@/lib/bitbucket/pulls";
-import { sixMonthsAgoIso } from "@/lib/window";
+import { sixMonthsAgoIso, EPOCH_ISO } from "@/lib/window";
 
 // "deep"  — one /activity call per PR: exact ready-for-review times and the full
 //           approval history. Costs ~1 request per PR.
@@ -20,6 +20,10 @@ export type SyncDeps = {
   fetchPRs: typeof fetchPullRequestsUpdatedSince;
   fetchActivity: typeof fetchPullRequestActivity;
   mode?: SyncMode;
+  // Ignore the incremental cursor and fetch every PR the repo has ever had. A normal
+  // first sync only reaches back 6 months, so "All time" is incomplete until a
+  // backfill has run. Idempotent: everything is upserted.
+  backfill?: boolean;
 };
 
 export const syncRepo = async (
@@ -27,7 +31,9 @@ export const syncRepo = async (
   repoSlug: string,
   nowIso: string,
 ): Promise<{ repoSlug: string; prCount: number }> => {
-  const since = getLastSynced(deps.db, repoSlug) ?? sixMonthsAgoIso(nowIso);
+  const since = deps.backfill
+    ? EPOCH_ISO
+    : getLastSynced(deps.db, repoSlug) ?? sixMonthsAgoIso(nowIso);
   const partials = await deps.fetchPRs(deps.workspace, repoSlug, since, deps.auth);
   const mode = deps.mode ?? "deep";
 

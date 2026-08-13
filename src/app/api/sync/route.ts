@@ -9,9 +9,12 @@ import { isDemoRequest } from "@/lib/demo/request";
 
 export const runtime = "nodejs";
 
-// Body: { mode?: "fast" | "deep" }. Defaults to "fast" — it populates both
-// matrices at roughly 1 request per 50 PRs. Use "deep" for accurate
-// ready-for-review times, at the cost of 1 request per PR.
+// Body: { mode?: "fast" | "deep", backfill?: boolean }. Mode defaults to "fast" —
+// it populates both matrices at roughly 1 request per 50 PRs. Use "deep" for
+// accurate ready-for-review times, at the cost of 1 request per PR. backfill: true
+// ignores each repo's incremental cursor and fetches its entire PR history — the
+// only way "All time" becomes complete, since a normal first sync reaches back
+// just 6 months.
 export async function POST(req: NextRequest) {
   try {
     // The client never appends `?demo=1` to this write — the UI disables the Refresh
@@ -28,6 +31,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Expected { mode?: 'fast'|'deep' }" }, { status: 400 });
     }
     const mode: SyncMode = requested ?? "fast";
+    const backfill = body?.backfill;
+    if (backfill !== undefined && typeof backfill !== "boolean") {
+      return NextResponse.json({ error: "Expected { backfill?: boolean }" }, { status: 400 });
+    }
 
     const auth = getAuthHeader();
     const db = getDb();
@@ -43,9 +50,10 @@ export async function POST(req: NextRequest) {
       fetchPRs: fetchPullRequestsUpdatedSince,
       fetchActivity: fetchPullRequestActivity,
       mode,
+      backfill: backfill ?? false,
     };
     const summary = await syncAll(deps, includedRepos, new Date().toISOString());
-    return NextResponse.json({ ...summary, mode });
+    return NextResponse.json({ ...summary, mode, backfill: backfill ?? false });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -45,6 +45,63 @@ describe("Dashboard", () => {
     expect(document.body.textContent).not.toMatch(/application error/i);
   });
 
+  it.each([
+    ["a refreshed cache", "2026-08-12T09:30:00.000Z", /12 Aug 2026/],
+    ["a never-synced cache", null, /run Refresh data on the Team tab/],
+  ])("shows the last-refreshed card for %s", async (_name, lastRefreshedAt, expected) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url.startsWith("/api/insights")) {
+          const insights = {
+            leaderboard: [], prsCreated: EMPTY_MATRIX, approvals: EMPTY_MATRIX,
+            window: "6m", sinceIso: "2026-02-13T00:00:00.000Z", generatedAt: "2026-08-13T00:00:00.000Z",
+            lastRefreshedAt,
+          };
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+      }),
+    );
+
+    render(<Dashboard demoAvailable={false} demoDefaultOn={false} />);
+    await waitFor(() => {
+      expect(screen.getByText(expected)).toBeTruthy();
+    });
+  });
+
+  it("shows how many PRs the window considers, so refreshes and backfills are visible", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url.startsWith("/api/insights")) {
+          const insights = {
+            leaderboard: [],
+            prsCreated: {
+              rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+              colHeaders: [{ key: "r1", label: "r1" }],
+              cells: [[1200], [34]],
+              rowTotals: [1200, 34],
+              colTotals: [1234],
+            },
+            approvals: EMPTY_MATRIX,
+            window: "6m", sinceIso: "2026-02-13T00:00:00.000Z", generatedAt: "2026-08-13T00:00:00.000Z",
+            lastRefreshedAt: "2026-08-12T09:30:00.000Z",
+          };
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+      }),
+    );
+
+    render(<Dashboard demoAvailable={false} demoDefaultOn={false} />);
+    // Card layout: the label and the count are separate elements.
+    await waitFor(() => {
+      expect(screen.getByText("PRs considered")).toBeTruthy();
+      expect(screen.getByText("1,234")).toBeTruthy();
+    });
+  });
+
   it("keeps the previous roster instead of adopting an error body when /api/roster fails", async () => {
     let rosterCalls = 0;
     vi.stubGlobal(

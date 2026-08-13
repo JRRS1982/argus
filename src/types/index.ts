@@ -75,4 +75,8 @@ export type InsightsResponse = {
   window: InsightsWindow;
   sinceIso: string;
   generatedAt: string;
+  // Newest sync stamp among included repos — when the cache was last refreshed.
+  // Null until a first sync; in demo mode the data is generated per request, so
+  // this is simply generatedAt.
+  lastRefreshedAt: string | null;
 };

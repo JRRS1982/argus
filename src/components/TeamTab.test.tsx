@@ -48,4 +48,33 @@ describe("TeamTab", () => {
 
     expect(onRosterChange).not.toHaveBeenCalled();
   });
+
+  it("posts { backfill: true } to /api/sync when Backfill all history is clicked", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        calls.push({ url, init });
+        if (url === "/api/sync") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ totalPrs: 7, repos: [{}, {}], mode: "fast", backfill: true }),
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ users: [], repos: [] }),
+        } as Response);
+      }),
+    );
+
+    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Backfill all history" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Synced 7 PRs across 2 repos\./)).toBeTruthy();
+    });
+    const syncCall = calls.find((c) => c.url === "/api/sync");
+    expect(JSON.parse(syncCall!.init!.body as string)).toEqual({ backfill: true });
+  });
 });

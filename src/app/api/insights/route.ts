@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getUsers, getRepos, getPullRequests, getApprovals } from "@/lib/db/queries";
+import { getUsers, getRepos, getPullRequests, getApprovals, getLastRefreshed } from "@/lib/db/queries";
 import { computeLeaderboard } from "@/lib/analytics/leaderboard";
 import { computePrsCreatedMatrix, computeApprovalMatrix } from "@/lib/analytics/matrices";
 import { resolveSinceIso, isInsightsWindow, type InsightsWindow } from "@/lib/window";
@@ -25,13 +25,14 @@ export async function GET(req: NextRequest) {
     // source differs.
     const demo = isDemoRequest(req.nextUrl);
     const generatedAtEarly = new Date().toISOString();
-    const { users, repos, prs, approvals } = demo
-      ? buildDemoDataset(generatedAtEarly)
+    const { users, repos, prs, approvals, lastRefreshedAt } = demo
+      ? { ...buildDemoDataset(generatedAtEarly), lastRefreshedAt: generatedAtEarly }
       : (() => {
           const db = getDb();
           return {
             users: getUsers(db), repos: getRepos(db),
             prs: getPullRequests(db), approvals: getApprovals(db),
+            lastRefreshedAt: getLastRefreshed(db),
           };
         })();
 
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
       window,
       sinceIso,
       generatedAt,
+      lastRefreshedAt,
     };
     return NextResponse.json(body);
   } catch (err) {

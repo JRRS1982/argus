@@ -8,7 +8,7 @@ type Roster = { users: UserRecord[]; repos: RepoRecord[] };
 export default function TeamTab({
   roster, onRosterChange, demo,
 }: { roster: Roster; onRosterChange: (r: Roster) => void; demo: boolean }) {
-  const [busy, setBusy] = useState<null | "discover" | "sync">(null);
+  const [busy, setBusy] = useState<null | "discover" | "sync" | "backfill">(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +19,15 @@ export default function TeamTab({
     if (res.ok) onRosterChange(await res.json());
   };
 
-  const run = async (kind: "discover" | "sync") => {
+  const run = async (kind: "discover" | "sync" | "backfill") => {
     setBusy(kind); setError(null); setMessage(null);
     try {
-      const res = await fetch(`/api/${kind}`, { method: "POST" });
+      const res = await fetch(
+        kind === "discover" ? "/api/discover" : "/api/sync",
+        kind === "backfill"
+          ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ backfill: true }) }
+          : { method: "POST" },
+      );
       const json = await res.json();
       if (!res.ok) { setError(json.error ?? "Request failed"); return; }
       setMessage(kind === "discover"
@@ -61,6 +66,13 @@ export default function TeamTab({
           className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">
           {busy === "sync" ? "Refreshing…" : "Refresh data"}
         </button>
+        <button onClick={() => run("backfill")} disabled={busy !== null || demo}
+          title={demo
+            ? "Turn off demo data to talk to Bitbucket"
+            : "Re-fetch every PR each ticked repo has ever had, not just activity since the last refresh — needed once for All time to be complete"}
+          className="px-4 py-2 rounded border border-gray-300 text-gray-700 disabled:opacity-50 hover:bg-gray-50">
+          {busy === "backfill" ? "Backfilling…" : "Backfill all history"}
+        </button>
         {message && <span className="text-sm text-green-700">{message}</span>}
         {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
@@ -69,7 +81,10 @@ export default function TeamTab({
         <span className="font-medium">Discover workspace</span> lists every user and repository in the Bitbucket
         workspace; nothing is selected to begin with. Tick the engineers and repositories you want, then
         <span className="font-medium"> Refresh data</span> to pull their PR history. Only ticked repositories are
-        fetched, and only ticked engineers appear in the other tabs.
+        fetched, and only ticked engineers appear in the other tabs. Refresh is incremental: it only asks
+        Bitbucket for activity since the last refresh, and a repo&apos;s very first refresh reaches back just
+        6 months. <span className="font-medium">Backfill all history</span> instead re-fetches every PR the
+        ticked repositories have ever had — run it once if the All time view looks thin.
       </p>
 
       {/* Two short lists of checkboxes; constrained so they don't stretch across a wide screen. */}

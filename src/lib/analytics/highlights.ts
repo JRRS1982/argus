@@ -1,8 +1,10 @@
 import type { InsightsResponse } from "@/types";
 
 export type Highlight = {
-  key: "services" | "approvals" | "median";
+  key: "prs" | "services" | "approvals" | "median" | "refreshed";
   label: string;
+  // The card's bold headline: an engineer's name on the recognition cards, the
+  // count on the "PRs considered" context card.
   engineer: string;
   value: string;
 };
@@ -23,6 +25,16 @@ const fmtDuration = (ms: number): string => {
 // Recognition, not ranking: each entry names one person for something worth doing.
 export const computeHighlights = (insights: InsightsResponse): Highlight[] => {
   const out: Highlight[] = [];
+
+  // Context, not recognition: how many PRs the selected window considers (opened in
+  // window by an included engineer in an included repo, merged or still open — the
+  // PRs-created row totals, so it cannot disagree with that tab). Always shown, even
+  // at 0: this is the number that visibly moves after a refresh or backfill.
+  out.push({
+    key: "prs", label: "PRs considered",
+    engineer: insights.prsCreated.rowTotals.reduce((a, b) => a + b, 0).toLocaleString("en-GB"),
+    value: "opened in the selected window",
+  });
 
   const services = insights.prsCreated.extraColumn;
   if (services) {
@@ -56,6 +68,25 @@ export const computeHighlights = (insights: InsightsResponse): Highlight[] => {
       value: fmtDuration(fastest.medianReviewMs),
     });
   }
+
+  // Context again: when the cache last pulled from Bitbucket. The tabs read the
+  // local cache, so anything merged since this instant is missing until the next
+  // refresh. Runs on the client, so the local timezone is the right one.
+  out.push(
+    insights.lastRefreshedAt
+      ? {
+          key: "refreshed", label: "Data refreshed",
+          engineer: new Date(insights.lastRefreshedAt).toLocaleString("en-GB", {
+            day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+          }),
+          value: "last pull from Bitbucket",
+        }
+      : {
+          key: "refreshed", label: "Data refreshed",
+          engineer: "Never",
+          value: "run Refresh data on the Team tab",
+        },
+  );
 
   return out;
 };

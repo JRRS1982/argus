@@ -92,7 +92,11 @@ Open [http://localhost:3000](http://localhost:3000).
 3. Use the checkboxes to include or exclude specific users and repos.
 4. Click **Refresh data** — Argus fetches PR activity for all included users/repos and populates the SQLite cache.
 
-After the first full refresh, subsequent refreshes are incremental (only new activity is fetched).
+After the first full refresh, subsequent refreshes are incremental (only new activity is fetched). A repo's
+very first refresh only reaches back 6 months, so the **All time** view is incomplete until you click
+**Backfill all history**, which re-fetches every PR the ticked repositories have ever had. The highlights
+strip includes "PRs considered" and "Data refreshed" cards, so you can see the data set grow and how fresh
+it is at a glance.
 
 ## Demo mode
 

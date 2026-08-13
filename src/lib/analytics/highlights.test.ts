@@ -28,9 +28,16 @@ const base: InsightsResponse = {
   window: "6m",
   sinceIso: "2026-01-29T00:00:00.000Z",
   generatedAt: "2026-07-29T00:00:00.000Z",
+  lastRefreshedAt: "2026-07-29T00:00:00.000Z",
 };
 
 describe("computeHighlights", () => {
+  it("leads with how many PRs the window considers, so refreshes and backfills are visible", () => {
+    const [first] = computeHighlights(base);
+    expect(first.key).toBe("prs");
+    expect(first.engineer).toBe("4"); // sum of prsCreated row totals
+  });
+
   it("names the engineer who touched the most services", () => {
     const h = computeHighlights(base).find((x) => x.key === "services");
     expect(h?.engineer).toBe("Ana");
@@ -47,13 +54,23 @@ describe("computeHighlights", () => {
     expect(h?.engineer).toBe("Ben"); // 3.6e6 ms < 7.2e6 ms
   });
 
-  it("omits categories with no data rather than showing them empty", () => {
+  it("ends with when the cache was last refreshed, or a prompt when it never was", () => {
+    const cards = computeHighlights(base);
+    const last = cards[cards.length - 1];
+    expect(last.key).toBe("refreshed");
+    expect(last.engineer).toMatch(/Jul 2026/); // local-time render of 2026-07-29
+
+    const never = computeHighlights({ ...base, lastRefreshedAt: null });
+    expect(never[never.length - 1].engineer).toBe("Never");
+  });
+
+  it("omits recognition categories with no data, but always keeps the context cards", () => {
     const empty: InsightsResponse = {
       ...base,
       leaderboard: [],
       prsCreated: { ...base.prsCreated, extraColumn: { label: "Services", values: [0, 0] } },
       approvals: { ...base.approvals, colTotals: [0, 0] },
     };
-    expect(computeHighlights(empty)).toEqual([]);
+    expect(computeHighlights(empty).map((x) => x.key)).toEqual(["prs", "refreshed"]);
   });
 });

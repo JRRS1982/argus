@@ -51,6 +51,17 @@ describe("syncRepo", () => {
     db.close();
   });
 
+  it("ignores the stored cursor and reaches back to the epoch when backfilling", async () => {
+    const db = freshDb();
+    const fetchPRs = vi.fn().mockResolvedValue([]);
+    const deps: SyncDeps = { db, workspace: "ws", auth: "auth", fetchPRs, fetchActivity: vi.fn(), backfill: true };
+
+    setLastSynced(db, "repo-a", "2026-06-01T00:00:00.000Z");
+    await syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z");
+    expect(fetchPRs.mock.calls[0][2]).toBe("1970-01-01T00:00:00.000Z");
+    db.close();
+  });
+
   it("in fast mode takes approvals from participants without any activity call", async () => {
     const db = freshDb();
     const fetchActivity = vi.fn();

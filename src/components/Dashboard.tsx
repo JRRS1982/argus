@@ -66,7 +66,8 @@ export default function Dashboard({
               <>
                 <span className="font-medium">All time</span>
                 {insights ? `: ${formatWindowLabel(insights.sinceIso, insights.generatedAt)}` : ""} — every PR held in
-                the local cache. Older periods are patchier, since each repo was only backfilled 6 months on its first sync.
+                the local cache. A repo&apos;s first ordinary refresh only reaches back 6 months, so older periods are
+                incomplete until you run <span className="font-medium">Backfill all history</span> on the Team tab.
               </>
             )}
           </p>

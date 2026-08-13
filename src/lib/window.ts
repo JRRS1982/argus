@@ -18,7 +18,7 @@ export const sixMonthsAgoIso = (nowIso: string): string => {
 
 export type InsightsWindow = "6m" | "all";
 
-const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
+export const EPOCH_ISO = "1970-01-01T00:00:00.000Z";
 
 export const isInsightsWindow = (value: unknown): value is InsightsWindow =>
   value === "6m" || value === "all";

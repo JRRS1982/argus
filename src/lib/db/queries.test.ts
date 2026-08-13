@@ -5,7 +5,7 @@ import {
   upsertUsers, upsertRepos, setUserIncluded, setRepoIncluded,
   upsertPullRequest, replaceApprovals,
   getUsers, getRepos, getPullRequests, getApprovals,
-  getLastSynced, setLastSynced,
+  getLastSynced, setLastSynced, getLastRefreshed,
 } from "@/lib/db/queries";
 import type { PullRequestRecord, ApprovalRecord } from "@/types";
 
@@ -132,6 +132,24 @@ describe("sync_state", () => {
     setLastSynced(db, "repo-a", "2026-06-01T00:00:00.000Z");
     setLastSynced(db, "repo-a", "2026-06-02T00:00:00.000Z");
     expect(getLastSynced(db, "repo-a")).toBe("2026-06-02T00:00:00.000Z");
+    db.close();
+  });
+
+  it("reports the newest sync stamp among included repos, or null before any sync", () => {
+    const db = freshDb();
+    upsertRepos(db, [
+      { slug: "repo-a", name: "A", projectKey: null, mainBranch: "main" },
+      { slug: "repo-b", name: "B", projectKey: null, mainBranch: "main" },
+      { slug: "repo-c", name: "C", projectKey: null, mainBranch: "main" },
+    ]);
+    setRepoIncluded(db, "repo-a", true);
+    setRepoIncluded(db, "repo-b", true);
+    expect(getLastRefreshed(db)).toBeNull();
+
+    setLastSynced(db, "repo-a", "2026-06-01T00:00:00.000Z");
+    setLastSynced(db, "repo-b", "2026-06-02T00:00:00.000Z");
+    setLastSynced(db, "repo-c", "2026-06-09T00:00:00.000Z"); // excluded, must not count
+    expect(getLastRefreshed(db)).toBe("2026-06-02T00:00:00.000Z");
     db.close();
   });
 });

@@ -137,6 +137,18 @@ export const getLastSynced = (db: Database.Database, repoSlug: string): string |
   return row ? row.last_synced_on : null;
 };
 
+// When the data was last refreshed: the newest sync stamp among included repos.
+// syncAll stamps every repo in a run with the same instant, so after a successful
+// Refresh this is simply when that refresh ran. Null until a first sync happens.
+export const getLastRefreshed = (db: Database.Database): string | null => {
+  const row = db.prepare(
+    `SELECT MAX(last_synced_on) AS last
+     FROM sync_state s JOIN repos r ON r.slug = s.repo_slug
+     WHERE r.included = 1`,
+  ).get() as { last: string | null };
+  return row.last;
+};
+
 export const setLastSynced = (db: Database.Database, repoSlug: string, iso: string): void => {
   db.prepare(
     `INSERT INTO sync_state (repo_slug, last_synced_on) VALUES (?, ?)
