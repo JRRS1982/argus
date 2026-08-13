@@ -56,18 +56,18 @@ export default function Dashboard({
           <RangeToggle range={range} onChange={setRange} />
           {demoAvailable && <DemoToggle on={demo} onChange={setDemo} />}
           <p className="text-sm text-gray-600 max-w-4xl">
-            {range === "6m" ? (
-              <>
-                <span className="font-medium">Rolling 6 months</span>
-                {insights ? `: ${formatWindowLabel(insights.sinceIso, insights.generatedAt)}` : ""} — moves with
-                today&apos;s date, so it is recalculated on every view and older PRs drop out of the figures below.
-              </>
-            ) : (
+            {range === "all" ? (
               <>
                 <span className="font-medium">All time</span>
                 {insights ? `: ${formatWindowLabel(insights.sinceIso, insights.generatedAt)}` : ""} — every PR held in
                 the local cache. A repo&apos;s first ordinary refresh only reaches back 6 months, so older periods are
                 incomplete until you run <span className="font-medium">Backfill all history</span> on the Team tab.
+              </>
+            ) : (
+              <>
+                <span className="font-medium">{range === "30d" ? "Rolling 30 days" : "Rolling 6 months"}</span>
+                {insights ? `: ${formatWindowLabel(insights.sinceIso, insights.generatedAt)}` : ""} — moves with
+                today&apos;s date, so it is recalculated on every view and older PRs drop out of the figures below.
               </>
             )}
           </p>
@@ -110,6 +110,7 @@ function RangeToggle({
   range, onChange,
 }: { range: InsightsWindow; onChange: (r: InsightsWindow) => void }) {
   const options: { key: InsightsWindow; label: string }[] = [
+    { key: "30d", label: "Last 30 days" },
     { key: "6m", label: "Last 6 months" },
     { key: "all", label: "All time" },
   ];

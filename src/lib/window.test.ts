@@ -16,6 +16,10 @@ describe("sixMonthsAgoIso", () => {
 describe("resolveSinceIso", () => {
   const NOW = "2026-07-28T09:00:00.000Z";
 
+  it("uses thirty days back for the 30d window, ignoring the earliest cached PR", () => {
+    expect(resolveSinceIso("30d", NOW, "2022-07-12T00:00:00.000Z")).toBe("2026-06-28T09:00:00.000Z");
+  });
+
   it("uses six months back for the 6m window, ignoring the earliest cached PR", () => {
     expect(resolveSinceIso("6m", NOW, "2022-07-12T00:00:00.000Z")).toBe("2026-01-28T09:00:00.000Z");
   });
@@ -30,7 +34,8 @@ describe("resolveSinceIso", () => {
 });
 
 describe("isInsightsWindow", () => {
-  it("accepts only the two known windows", () => {
+  it("accepts only the three known windows", () => {
+    expect(isInsightsWindow("30d")).toBe(true);
     expect(isInsightsWindow("6m")).toBe(true);
     expect(isInsightsWindow("all")).toBe(true);
     expect(isInsightsWindow("12m")).toBe(false);

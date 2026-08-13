@@ -10,13 +10,13 @@ import type { InsightsResponse } from "@/types";
 
 export const runtime = "nodejs";
 
-// Query: ?window=6m|all (default 6m). The window is only a read-time filter — the
+// Query: ?window=30d|6m|all (default 6m). The window is only a read-time filter — the
 // cache is never pruned, so "all" reports every PR ever synced.
 export async function GET(req: NextRequest) {
   try {
     const requested = req.nextUrl.searchParams.get("window");
     if (requested !== null && !isInsightsWindow(requested)) {
-      return NextResponse.json({ error: "Expected window=6m|all" }, { status: 400 });
+      return NextResponse.json({ error: "Expected window=30d|6m|all" }, { status: 400 });
     }
     const window: InsightsWindow = requested ?? "6m";
 

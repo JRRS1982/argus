@@ -105,7 +105,7 @@ No Bitbucket credentials? Argus still runs. With no `BITBUCKET_EMAIL`/`BITBUCKET
 - Demo mode swaps the data source for a seeded, in-memory fixture of 5 engineers and 5 repos — the same record types the database returns, run through the same analytics functions, so the demo can't drift from real behaviour.
 - It never touches SQLite: nothing is read or written to `data/argus.sqlite`, which is what makes it safe on a read-only filesystem.
 - Discover, Refresh data, and the roster checkboxes are all disabled while it's on, since there is no real workspace to modify.
-- Dates in the fixture are generated relative to the current time, so both **Last 6 months** and **All time** always show data.
+- Dates in the fixture are generated relative to the current time, so every window setting — **Last 30 days**, **Last 6 months** and **All time** — always shows data.
 - On a deployment with real credentials, the toggle never appears — demo mode is only ever available when there is nothing real to protect.
 
 ## Data persistence
