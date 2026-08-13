@@ -167,7 +167,7 @@ describe("MatrixTable", () => {
       />,
     );
     const leadingRow = leadingContainer.querySelectorAll("tbody tr")[0].children;
-    expect(leadingRow[0].className).toContain("w-52"); // engineer name, sized to match the total's offset
+    expect(leadingRow[0].className).toContain("min-w-52"); // engineer name, sized to match the total's offset
     expect(leadingRow[1].className).toContain("left-52"); // row total, stuck at that same offset
 
     const { container: trailingContainer } = render(
@@ -184,6 +184,42 @@ describe("MatrixTable", () => {
     allTrailingCells.forEach((cell) => {
       expect(cell.className).not.toContain("w-52");
       expect(cell.className).not.toContain("left-52");
+    });
+  });
+
+  it("pins the extra column beside the totals column, only in leading mode", () => {
+    const withExtra: Matrix = { ...matrix, extraColumn: { label: "Services", values: [1] } };
+
+    const { container: leadingContainer } = render(
+      <MatrixTable
+        matrix={withExtra}
+        rowAxisLabel="Engineer" colAxisLabel="Repository"
+        rowTotalLabel="PRs by engineer" colTotalLabel="PRs in repo"
+        description="d" totalsPosition="leading"
+      />,
+    );
+    const headers = leadingContainer.querySelectorAll("thead tr")[1].children;
+    // The totals column needs a fixed min-width so the extra column's sticky offset is
+    // deterministic (plain `width` is ignored by auto table layout at min-content width).
+    expect(headers[1].className).toContain("min-w-40"); // PRs by engineer
+    expect(headers[2].className).toContain("left-92"); // Services, stuck after w-52 + w-40
+    const leadingRow = leadingContainer.querySelectorAll("tbody tr")[0].children;
+    expect(leadingRow[2].className).toContain("left-92"); // Services body cell
+    const footerRow = [...leadingContainer.querySelectorAll("tbody tr")].at(-1)!.children;
+    expect(footerRow[2].className).toContain("left-92"); // Services footer spacer
+
+    const { container: trailingContainer } = render(
+      <MatrixTable
+        matrix={withExtra}
+        rowAxisLabel="Engineer" colAxisLabel="Repository"
+        rowTotalLabel="PRs by engineer" colTotalLabel="PRs in repo"
+        description="d"
+      />,
+    );
+    // Trailing mode (Approvals) keeps auto widths and nothing pinned, exactly as before.
+    [...trailingContainer.querySelectorAll("th, td")].forEach((cell) => {
+      expect(cell.className).not.toContain("w-40");
+      expect(cell.className).not.toContain("left-92");
     });
   });
 

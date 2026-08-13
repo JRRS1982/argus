@@ -26,19 +26,27 @@ export default function MatrixTable({
 }) {
   const leading = totalsPosition === "leading";
   const trailingCols = matrix.extraColumn ? 2 : 1;
-  // Sticky offset for the totals column must match the row-header width below.
-  // Both are needed only in leading mode: trailing mode keeps auto width and no stickiness,
-  // exactly as before this prop existed, so the Approvals matrix stays pixel-for-pixel unchanged.
+  // Sticky offsets must match the real rendered widths of the columns to their left:
+  // totals pins at the row-header width (13rem), the extra column at row header +
+  // totals (13rem + 10rem = left-92). The widths are min-widths, not widths — this
+  // table sits at its min-content width inside an overflow-x scroller, and in that
+  // regime auto table layout ignores `width` on cells entirely, leaving the columns
+  // narrower than the offsets and the pinned cells floating over their neighbours.
+  // All of this applies only in leading mode: trailing mode keeps auto widths and no
+  // stickiness, exactly as before this prop existed, so the Approvals matrix stays
+  // pixel-for-pixel unchanged.
   const stickyTotal = leading ? "sticky left-52 z-10" : "";
-  const rowHeaderWidth = leading ? "w-52 z-20" : "";
+  const totalWidth = leading ? " min-w-40" : "";
+  const stickyExtra = leading ? " sticky left-92 z-10" : "";
+  const rowHeaderWidth = leading ? "min-w-52 z-20" : "";
 
   const totalHeaders = (
     <>
-      <th className={`border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap${stickyTotal ? ` ${stickyTotal}` : ""}`}>
+      <th className={`border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap${stickyTotal ? ` ${stickyTotal}` : ""}${totalWidth}`}>
         {rowTotalLabel}
       </th>
       {matrix.extraColumn && (
-        <th className="border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap">
+        <th className={`border px-3 py-2 bg-gray-100 text-gray-700 font-semibold whitespace-nowrap${stickyExtra}`}>
           {matrix.extraColumn.label}
         </th>
       )}
@@ -51,7 +59,7 @@ export default function MatrixTable({
         {matrix.rowTotals[r]}
       </td>
       {matrix.extraColumn && (
-        <td className="border px-3 py-2 text-center font-semibold bg-gray-50">
+        <td className={`border px-3 py-2 text-center font-semibold bg-gray-50${stickyExtra}`}>
           {matrix.extraColumn.values[r]}
         </td>
       )}
@@ -63,7 +71,9 @@ export default function MatrixTable({
       {/* Unlike the header/cell totals above, this spacer had no background before this prop
           existed — only give it one in leading mode, where it also needs to stick. */}
       <td className={leading ? `border px-3 py-2 bg-gray-100 ${stickyTotal}` : "border px-3 py-2"} />
-      {matrix.extraColumn && <td className="border px-3 py-2" />}
+      {matrix.extraColumn && (
+        <td className={leading ? `border px-3 py-2 bg-gray-100${stickyExtra}` : "border px-3 py-2"} />
+      )}
     </>
   );
 
