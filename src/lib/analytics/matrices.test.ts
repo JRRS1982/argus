@@ -39,6 +39,17 @@ describe("computePrsCreatedMatrix", () => {
     expect(m.colTotals).toEqual([2, 1]);
   });
 
+  it("omits repos with no in-scope PRs from the columns", () => {
+    const prs = [
+      pr({ id: 1, authorAccountId: "u1", repoSlug: "repo-a" }),
+      pr({ id: 2, repoSlug: "repo-b", state: "DECLINED", mergedOn: null }), // out of scope -> repo-b stays empty
+    ];
+    const m = computePrsCreatedMatrix(prs, repos, users, SINCE);
+    expect(m.colHeaders.map((c) => c.label)).toEqual(["Repo A"]);
+    expect(m.cells).toEqual([[1], [0]]);
+    expect(m.colTotals).toEqual([1]);
+  });
+
   it("counts the distinct services each engineer opened PRs in", () => {
     const prs = [
       pr({ id: 1, authorAccountId: "u1", repoSlug: "repo-a" }),
@@ -60,7 +71,7 @@ describe("PR state scope", () => {
       pr({ id: 4, repoSlug: "repo-b", state: "SUPERSEDED", mergedOn: null }),
     ];
     const m = computePrsCreatedMatrix(prs, repos, users, SINCE);
-    expect(m.cells[0]).toEqual([2, 0]); // Alice: the merged + open one only
+    expect(m.cells[0]).toEqual([2]); // Alice: the merged + open one only (repo-b column dropped, all out of scope)
     expect(m.rowTotals[0]).toBe(2);
   });
 
@@ -132,7 +143,8 @@ describe("row ordering", () => {
     const prs = [pr({ id: 1, authorAccountId: "u4", repoSlug: "repo-a" })];
     const m = computePrsCreatedMatrix(prs, repos, unordered, SINCE);
     const zoe = m.rowUsers.findIndex((u) => u.displayName === "Zoe");
-    expect(m.cells[zoe]).toEqual([1, 0]);
+    expect(m.cells[zoe]).toEqual([1]); // only repo-a has PRs, so it is the only column
+
     expect(m.rowTotals).toEqual([0, 0, 0, 1]);
   });
 });

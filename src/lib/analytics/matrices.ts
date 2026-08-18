@@ -41,10 +41,15 @@ export const computePrsCreatedMatrix = (
     if (r === undefined || c === undefined) continue;
     cells[r][c] += 1;
   }
+  // A repo nobody opened a PR in adds nothing but width — drop its column.
+  const hasPrs = cols.map((_, c) => cells.some((row) => row[c] > 0));
+  const shownHeaders = colHeaders.filter((_, c) => hasPrs[c]);
+  const shownCells = cells.map((row) => row.filter((_, c) => hasPrs[c]));
+
   // Breadth: how many distinct services (repos) each engineer opened at least one PR in.
-  const distinctServices = cells.map((row) => row.filter((n) => n > 0).length);
+  const distinctServices = shownCells.map((row) => row.filter((n) => n > 0).length);
   return {
-    ...withTotals(rowUsers, colHeaders, cells),
+    ...withTotals(rowUsers, shownHeaders, shownCells),
     extraColumn: { label: "Services", values: distinctServices },
   };
 };
