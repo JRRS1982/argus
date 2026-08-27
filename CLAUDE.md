@@ -76,6 +76,9 @@ have data.
 1. **Discover** (`POST /api/discover`) — queries Bitbucket for all workspace users and repos; stores them in SQLite as candidates.
 2. **Roster** (`GET /api/roster`) — returns current include/exclude state for users and repos.
 3. **Sync** (`POST /api/sync`) — fetches PR activity for all included repos; upserts into SQLite; incremental (only activity since the last sync is fetched, and a repo's very first sync reaches back 6 months). Body `{ backfill: true }` ignores the cursor and fetches each repo's entire PR history — required once for **All time** to be complete. The UI exposes this as **Backfill all history** on the Team tab.
+   - **One repo's failure never costs the rest of the run.** Each repo has its own cursor, so `syncAll` catches per repo and carries on: the failing repo keeps its old cursor and retries the same range next time, every other repo still advances. Failures come back as `skipped: [{ repoSlug, reason, status, missing }]` alongside a 200; only a run where *every* repo failed is a 502. The Team tab lists skipped repos in a warning panel, and offers **Remove from roster** for the ones Bitbucket reports as `missing` (HTTP 404 — deleted, or invisible to the token). A repo is never unticked automatically, so a Bitbucket outage cannot silently shrink the roster.
+   - Discover only ever *adds*, so a repo that is later deleted stays ticked and 404s on every sync until it is unticked. That is what the panel is for.
+   - Bitbucket failures surface as `BitbucketApiError` (`status`, `statusText`, `url`), whose message is plain English per status — the request URL is kept off the message because a PR query string is ~400 characters of state and field selectors.
 4. **Insights** (`GET /api/insights`) — reads SQLite and returns leaderboard rows, PRs-created matrix, and approval matrix to the frontend.
 
 ## SQLite schema

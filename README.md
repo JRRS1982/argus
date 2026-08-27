@@ -91,6 +91,9 @@ Open [http://localhost:3000](http://localhost:3000).
 2. Click **Discover workspace** — Argus queries Bitbucket for all users and repos in your workspace.
 3. Use the checkboxes to include or exclude specific users and repos.
 4. Click **Refresh data** — Argus fetches PR activity for all included users/repos and populates the SQLite cache.
+   If a repository can't be read, the refresh finishes the rest and lists what it skipped, with the reason in
+   plain English. A repository Bitbucket says is gone (404) gets a **Remove from roster** button beside it —
+   deleted repos stay ticked otherwise, because Discover only ever adds.
 
 After the first full refresh, subsequent refreshes are incremental (only new activity is fetched). A repo's
 very first refresh only reaches back 6 months, so the **All time** view is incomplete until you click

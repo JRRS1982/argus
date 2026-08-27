@@ -53,6 +53,20 @@ export async function POST(req: NextRequest) {
       backfill: backfill ?? false,
     };
     const summary = await syncAll(deps, includedRepos, new Date().toISOString());
+    // A run where every repo failed is a failure, not a sync of zero PRs — most
+    // likely bad credentials, so say so rather than reporting cheerful emptiness.
+    // A partial run is a success that carries warnings: the caller gets 200 plus
+    // `skipped`, and the Team tab lists what was left behind.
+    if (summary.repos.length === 0) {
+      return NextResponse.json(
+        {
+          ...summary, mode, backfill: backfill ?? false,
+          error: `None of the ${includedRepos.length} selected repositories could be refreshed. `
+            + `${summary.skipped[0].repoSlug}: ${summary.skipped[0].reason}`,
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.json({ ...summary, mode, backfill: backfill ?? false });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

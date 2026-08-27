@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import Database from "better-sqlite3";
 import { applySchema } from "@/lib/db/schema";
 import { getPullRequests, getApprovals, getLastSynced, setLastSynced } from "@/lib/db/queries";
-import { syncRepo, type SyncDeps } from "@/lib/sync/sync";
+import { syncRepo, syncAll, type SyncDeps } from "@/lib/sync/sync";
+import { BitbucketApiError, describeHttpFailure } from "@/lib/bitbucket/client";
 
 const freshDb = () => { const db = new Database(":memory:"); applySchema(db); return db; };
 
@@ -120,5 +121,50 @@ describe("syncRepo", () => {
     await expect(syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z")).rejects.toThrow("boom");
     expect(getLastSynced(db, "repo-a")).toBeNull();
     db.close();
+  });
+});
+
+describe("syncAll", () => {
+  const okDeps = (): SyncDeps => ({
+    db: freshDb(), workspace: "ws", auth: "auth", mode: "fast",
+    fetchPRs: vi.fn().mockResolvedValue([basePr]),
+    fetchActivity: vi.fn(),
+  });
+
+  it("skips a repo that fails and still syncs every repo after it", async () => {
+    const deps = okDeps();
+    deps.fetchPRs = vi.fn(async (_ws: string, slug: string) => {
+      if (slug === "gone") throw new BitbucketApiError(404, "Not Found", "https://x/gone/pullrequests?state=MERGED");
+      return [{ ...basePr, repoSlug: slug }];
+    }) as SyncDeps["fetchPRs"];
+
+    const result = await syncAll(deps, ["repo-a", "gone", "repo-b"], "2026-06-24T00:00:00.000Z");
+
+    expect(result.repos.map((r) => r.repoSlug)).toEqual(["repo-a", "repo-b"]);
+    expect(result.totalPrs).toBe(2);
+    expect(result.skipped).toEqual([
+      {
+        repoSlug: "gone",
+        reason: describeHttpFailure(404, "Not Found"),
+        status: 404,
+        missing: true,
+      },
+    ]);
+    deps.db.close();
+  });
+
+  it("marks a transient failure as not missing, so the UI never offers to untick it", async () => {
+    const deps = okDeps();
+    deps.fetchPRs = vi.fn(async (_ws: string, slug: string) => {
+      if (slug === "flaky") throw new BitbucketApiError(503, "Service Unavailable", "https://x");
+      if (slug === "odd") throw new Error("socket hang up");
+      return [{ ...basePr, repoSlug: slug }];
+    }) as SyncDeps["fetchPRs"];
+
+    const { skipped } = await syncAll(deps, ["flaky", "odd"], "2026-06-24T00:00:00.000Z");
+
+    expect(skipped.map((s) => s.missing)).toEqual([false, false]);
+    expect(skipped[1]).toEqual({ repoSlug: "odd", reason: "socket hang up", status: null, missing: false });
+    deps.db.close();
   });
 });

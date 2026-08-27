@@ -78,3 +78,65 @@ describe("TeamTab", () => {
     expect(JSON.parse(syncCall!.init!.body as string)).toEqual({ backfill: true });
   });
 });
+
+describe("TeamTab skipped repositories", () => {
+  const syncResponse = (skipped: unknown[]) => ({
+    ok: true,
+    json: () => Promise.resolve({ totalPrs: 4, repos: [{}], skipped }),
+  }) as Response;
+
+  it("names each skipped repo with a readable reason instead of a raw API URL", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/sync") {
+          return Promise.resolve(syncResponse([
+            { repoSlug: "benchmarkme", reason: "Not found (404) — it no longer exists in this workspace.", status: 404, missing: true },
+            { repoSlug: "phobos", reason: "Bitbucket is unavailable (503) — try again shortly.", status: 503, missing: false },
+          ]));
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+      }),
+    );
+
+    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/benchmarkme/)).toBeTruthy();
+    });
+    expect(screen.getByText(/no longer exists in this workspace/)).toBeTruthy();
+    expect(screen.getByText(/Bitbucket is unavailable/)).toBeTruthy();
+    // Only the repo that is genuinely gone gets an untick affordance — a 503 is
+    // transient and must never invite the user to drop a repo from the roster.
+    expect(screen.getAllByRole("button", { name: /Remove from roster/ })).toHaveLength(1);
+  });
+
+  it("unticks a missing repo via the roster API and drops it from the warning", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        calls.push({ url, init });
+        if (url === "/api/sync") {
+          return Promise.resolve(syncResponse([
+            { repoSlug: "benchmarkme", reason: "Not found (404).", status: 404, missing: true },
+          ]));
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+      }),
+    );
+
+    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Remove from roster/ })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove from roster/ }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /Remove from roster/ })).toBeNull();
+    });
+    const patch = calls.find((c) => c.init?.method === "PATCH");
+    expect(JSON.parse(patch!.init!.body as string)).toEqual({ kind: "repo", id: "benchmarkme", included: false });
+  });
+});
