@@ -62,7 +62,8 @@ export async function POST(req: NextRequest) {
         {
           ...summary, mode, backfill: backfill ?? false,
           error: `None of the ${includedRepos.length} selected repositories could be refreshed. `
-            + `${summary.skipped[0].repoSlug}: ${summary.skipped[0].reason}`,
+            + `${summary.skipped[0]?.repoSlug ?? "no repository"}: `
+            + `${summary.skipped[0]?.reason ?? "no reason reported"}`,
         },
         { status: 502 },
       );

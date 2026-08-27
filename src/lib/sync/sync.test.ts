@@ -168,3 +168,71 @@ describe("syncAll", () => {
     deps.db.close();
   });
 });
+
+describe("syncAll run-wide failures", () => {
+  it("stops after a 401 and reports the untouched repos as not attempted", async () => {
+    const db = freshDb();
+    const fetchPRs = vi.fn(async (_ws: string, slug: string) => {
+      if (slug === "repo-b") throw new BitbucketApiError(401, "Unauthorized", "https://x");
+      return [{ ...basePr, repoSlug: slug }];
+    }) as SyncDeps["fetchPRs"];
+    const deps: SyncDeps = { db, workspace: "ws", auth: "auth", mode: "fast", fetchPRs, fetchActivity: vi.fn() };
+
+    const { repos, skipped } = await syncAll(deps, ["repo-a", "repo-b", "repo-c", "repo-d"], "2026-06-24T00:00:00.000Z");
+
+    expect(repos.map((r) => r.repoSlug)).toEqual(["repo-a"]);
+    // repo-c and repo-d are accounted for without a request being spent on them.
+    expect(skipped.map((s) => s.repoSlug)).toEqual(["repo-b", "repo-c", "repo-d"]);
+    expect(skipped.slice(1).every((s) => s.status === null && !s.missing)).toBe(true);
+    expect(fetchPRs).toHaveBeenCalledTimes(2);
+    db.close();
+  });
+
+  it("stops on a 429 rather than hammering a rate limit it is already subject to", async () => {
+    const db = freshDb();
+    const fetchPRs = vi.fn(async () => {
+      throw new BitbucketApiError(429, "Too Many Requests", "https://x");
+    }) as unknown as SyncDeps["fetchPRs"];
+    const deps: SyncDeps = { db, workspace: "ws", auth: "auth", mode: "fast", fetchPRs, fetchActivity: vi.fn() };
+
+    const { skipped } = await syncAll(deps, ["a", "b", "c"], "2026-06-24T00:00:00.000Z");
+
+    expect(skipped).toHaveLength(3);
+    expect(fetchPRs).toHaveBeenCalledTimes(1);
+    db.close();
+  });
+
+  it("keeps going after a 403 or 404, which really are per-repo", async () => {
+    const db = freshDb();
+    const fetchPRs = vi.fn(async (_ws: string, slug: string) => {
+      if (slug === "a") throw new BitbucketApiError(403, "Forbidden", "https://x");
+      if (slug === "b") throw new BitbucketApiError(404, "Not Found", "https://x");
+      return [{ ...basePr, repoSlug: slug }];
+    }) as SyncDeps["fetchPRs"];
+    const deps: SyncDeps = { db, workspace: "ws", auth: "auth", mode: "fast", fetchPRs, fetchActivity: vi.fn() };
+
+    const { repos, skipped } = await syncAll(deps, ["a", "b", "c"], "2026-06-24T00:00:00.000Z");
+
+    expect(repos.map((r) => r.repoSlug)).toEqual(["c"]);
+    expect(skipped.map((s) => s.missing)).toEqual([false, true]);
+    db.close();
+  });
+
+  it("does not call a repo missing when a single PR's activity feed 404s in deep mode", async () => {
+    const db = freshDb();
+    const deps: SyncDeps = {
+      db, workspace: "ws", auth: "auth", mode: "deep",
+      fetchPRs: vi.fn().mockResolvedValue([basePr]),
+      // The repo's PR list is fine; one PR's activity is not. That says nothing
+      // about whether the repo exists, so it must not offer to untick it.
+      fetchActivity: vi.fn().mockRejectedValue(new BitbucketApiError(404, "Not Found", "https://x/pullrequests/5/activity")),
+    };
+
+    const { skipped } = await syncAll(deps, ["repo-a"], "2026-06-24T00:00:00.000Z");
+
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0].status).toBe(404);
+    expect(skipped[0].missing).toBe(false);
+    db.close();
+  });
+});

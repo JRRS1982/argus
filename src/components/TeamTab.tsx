@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { UserRecord, RepoRecord } from "@/types";
-import type { SkippedRepo } from "@/lib/sync/sync";
+import type { UserRecord, RepoRecord, SkippedRepo } from "@/types";
 
 type Roster = { users: UserRecord[]; repos: RepoRecord[] };
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 export default function TeamTab({
   roster, onRosterChange, demo,
@@ -13,6 +14,10 @@ export default function TeamTab({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<SkippedRepo[]>([]);
+  // A run where nothing succeeded is one fault, not N deleted repos: a wrong
+  // BITBUCKET_WORKSPACE 404s every URL alike. Offering to untick each one would
+  // hand the user a way to wipe their own roster over a single misconfiguration.
+  const [anyRepoSucceeded, setAnyRepoSucceeded] = useState(false);
 
   const reloadRoster = async () => {
     const res = await fetch(`/api/roster${demo ? "?demo=1" : ""}`);
@@ -22,7 +27,7 @@ export default function TeamTab({
   };
 
   const run = async (kind: "discover" | "sync" | "backfill") => {
-    setBusy(kind); setError(null); setMessage(null); setSkipped([]);
+    setBusy(kind); setError(null); setMessage(null); setSkipped([]); setAnyRepoSucceeded(false);
     try {
       const res = await fetch(
         kind === "discover" ? "/api/discover" : "/api/sync",
@@ -34,10 +39,11 @@ export default function TeamTab({
       // A partial sync reports skipped repos alongside a 200; a total failure
       // reports them alongside its error. Show them either way.
       if (Array.isArray(json.skipped)) setSkipped(json.skipped);
+      setAnyRepoSucceeded(Array.isArray(json.repos) && json.repos.length > 0);
       if (!res.ok) { setError(json.error ?? "Request failed"); return; }
       setMessage(kind === "discover"
         ? `Discovered ${json.users} users, ${json.repos} repos.`
-        : `Synced ${json.totalPrs} PRs across ${json.repos.length} repos.`
+        : `Synced ${plural(json.totalPrs, "PR")} across ${plural(json.repos.length, "repo")}.`
           + (json.skipped?.length ? ` ${json.skipped.length} skipped.` : ""));
       await reloadRoster();
     } catch (e) {
@@ -64,7 +70,7 @@ export default function TeamTab({
   // ever reports, so a temporary outage can never silently shrink the roster.
   const removeFromRoster = async (slug: string) => {
     if (await toggle("repo", slug, false)) {
-      setSkipped((current) => current.filter((s) => s.repoSlug !== slug));
+      setSkipped((current) => current.filter((item) => item.repoSlug !== slug));
     }
   };
 
@@ -98,7 +104,8 @@ export default function TeamTab({
       )}
 
       {skipped.length > 0 && (
-        <SkippedRepos items={skipped} repos={roster.repos} onRemove={removeFromRoster} />
+        <SkippedRepos items={skipped} repos={roster.repos} onRemove={removeFromRoster}
+          allowRemoval={anyRepoSucceeded} />
       )}
 
       <p className="text-sm text-gray-600 max-w-4xl">
@@ -128,11 +135,12 @@ export default function TeamTab({
 // where Bitbucket said the repo is gone — a one-click way to drop the stale roster
 // entry. Everything else in the run still refreshed.
 function SkippedRepos({
-  items, repos, onRemove,
+  items, repos, onRemove, allowRemoval,
 }: {
   items: SkippedRepo[];
   repos: RepoRecord[];
   onRemove: (slug: string) => void;
+  allowRemoval: boolean;
 }) {
   const nameOf = (slug: string) => repos.find((r) => r.slug === slug)?.name ?? slug;
   return (
@@ -141,15 +149,16 @@ function SkippedRepos({
         {items.length === 1 ? "1 repository was skipped" : `${items.length} repositories were skipped`}
       </h4>
       <p className="text-sm text-amber-800 mt-0.5">
-        Every other selected repository refreshed normally. A skipped repository keeps its previous
-        data and is retried on the next refresh.
+        {allowRemoval
+          ? "Every other selected repository refreshed normally. A skipped repository keeps its previous data and is retried on the next refresh."
+          : "Nothing refreshed, so this is more likely one fault — credentials, or the workspace slug — than this many missing repositories. Fix that and refresh again; no repository is offered for removal until at least one succeeds."}
       </p>
       <ul className="mt-2 space-y-1">
         {items.map((item) => (
           <li key={item.repoSlug} className="text-sm text-amber-900 flex flex-wrap items-baseline gap-x-2">
             <span className="font-medium">{nameOf(item.repoSlug)}</span>
             <span className="text-amber-700">{item.reason}</span>
-            {item.missing && (
+            {item.missing && allowRemoval && (
               <button onClick={() => onRemove(item.repoSlug)}
                 title="Untick this repository so future refreshes skip it"
                 className="text-xs px-2 py-0.5 rounded border border-amber-400 text-amber-900 hover:bg-amber-100">

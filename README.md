@@ -39,15 +39,23 @@ Who helps whom get work over the line. Read a row as: of this author's PRs, how 
 
 | Tab | What it shows |
 |-----|---------------|
-| **Team** | Team roster with include/exclude toggles for users and repos; Discover and Refresh data controls |
+| **Team** | Team roster with per-user and per-repo include/exclude toggles; Discover workspace, Refresh data and Backfill all history controls |
 | **Review-time leaderboard** | Median and average in-review duration per engineer, listed alphabetically; expandable rows show individual PRs, slowest first |
-| **PRs created** | Matrix of PRs created — engineers (rows) × projects/repos (columns) — over the last 6 months, with row/column totals |
-| **Approvals** | Matrix of approvals — PR authors (rows) × approvers (columns) — over the last 6 months: how many of each author's PRs each colleague approved; self-approvals are excluded |
+| **PRs created** | Matrix of PRs created — engineers (rows) × projects/repos (columns) — over the active window, with row/column totals and a Services count; repos with no in-scope PRs are omitted |
+| **Approvals** | Matrix of approvals — PR authors (rows) × approvers (columns) — over the active window: how many of each author's PRs each colleague approved; self-approvals are excluded, and merged PRs nobody approved get their own column |
 
 ## Metric definitions
 
-- **In-review time**: time from the PR entering "ready for review" state to it being merged. When no draft→ready transition is recorded, the PR creation timestamp is used as the fallback (these PRs are flagged with `*` in the leaderboard).
-- **Scope**: merged-to-main PRs only, over the last 6 months.
+- **In-review time**: in practice **created → last touched**. The end of the interval is `updated_on`, because
+  Bitbucket's PR list exposes no merge timestamp — that is the merge for almost all PRs, but drifts later if
+  anyone comments after merging. The start is the draft→ready transition where one was recorded, otherwise the
+  creation time (those PRs are flagged with `*` in the leaderboard). Only a `deep` sync can derive real ready
+  times; a `fast` sync — the default — makes every PR a fallback.
+- **Scope**: `MERGED` or `OPEN` PRs targeting the repo's main branch, in an included repo, by an included user.
+  `DECLINED`/`SUPERSEDED` are excluded as abandoned work. Defined once in `src/lib/analytics/scope.ts` so the
+  tabs cannot disagree about which PRs exist.
+- **Window**: rolling 6 months by default, rolling 30 days, or all time — switchable above the tabs and applied
+  at read time, so the SQLite cache is never pruned.
 - **Self-approvals**: excluded from the Approvals matrix.
 
 ## Setup

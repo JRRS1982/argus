@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { PullRequestRecord } from "@/types";
+import type { PullRequestRecord, SkippedRepo } from "@/types";
 import { upsertPullRequest, replaceApprovals, mergeApprovals, getLastSynced, setLastSynced } from "@/lib/db/queries";
 import {
   deriveReadyForReview, extractApprovals,
@@ -27,6 +27,22 @@ export type SyncDeps = {
   backfill?: boolean;
 };
 
+// Marks a failure as belonging to the repo itself — its PR list — rather than to one
+// PR inside it. The distinction decides whether a 404 means "this repo is gone": a
+// 404 from a single PR's activity feed (deep mode) or from a pagination cursor means
+// nothing of the sort, and must never offer to untick a healthy repo.
+const REPO_LEVEL = Symbol("repoLevelFailure");
+
+const tagRepoLevel = (err: unknown): unknown => {
+  if (typeof err === "object" && err !== null) {
+    Object.defineProperty(err, REPO_LEVEL, { value: true });
+  }
+  return err;
+};
+
+const isRepoLevel = (err: unknown): boolean =>
+  typeof err === "object" && err !== null && REPO_LEVEL in err;
+
 export const syncRepo = async (
   deps: SyncDeps,
   repoSlug: string,
@@ -35,7 +51,12 @@ export const syncRepo = async (
   const since = deps.backfill
     ? EPOCH_ISO
     : getLastSynced(deps.db, repoSlug) ?? sixMonthsAgoIso(nowIso);
-  const partials = await deps.fetchPRs(deps.workspace, repoSlug, since, deps.auth);
+  let partials;
+  try {
+    partials = await deps.fetchPRs(deps.workspace, repoSlug, since, deps.auth);
+  } catch (err) {
+    throw tagRepoLevel(err);
+  }
   const mode = deps.mode ?? "deep";
 
   for (const partial of partials) {
@@ -62,26 +83,35 @@ export const syncRepo = async (
   return { repoSlug, prCount: partials.length };
 };
 
-// A repo that could not be synced at all. `missing` distinguishes a repo that has
-// been deleted or hidden from the token (permanent — the roster entry is stale and
-// worth removing) from a transient failure like a 503 or a dropped socket, which
-// must never invite the user to drop a repo they still want.
-export type SkippedRepo = {
-  repoSlug: string;
-  reason: string;
-  status: number | null;
-  missing: boolean;
-};
-
 const toSkipped = (repoSlug: string, err: unknown): SkippedRepo => {
   const status = err instanceof BitbucketApiError ? err.status : null;
+  if (err instanceof BitbucketApiError) {
+    // The only record of which URL was actually refused. Without it a typo'd
+    // workspace slug and a genuinely deleted repo produce identical output.
+    console.error(`[sync] ${repoSlug}: ${err.status} ${err.statusText} — ${err.url}`);
+  } else {
+    console.error(`[sync] ${repoSlug}:`, err);
+  }
   return {
     repoSlug,
     reason: err instanceof Error ? err.message : "Unknown error",
     status,
-    missing: status === 404,
+    missing: status === 404 && isRepoLevel(err),
   };
 };
+
+// 401 and 429 describe the credential or the account, not one repo. Carrying on
+// would issue one more rejected request per remaining repo — and repeated 401s are
+// what Atlassian throttles on, while a 429 would have the run hammering away at a
+// block it is already subject to. Stop, and report the rest as not attempted.
+const isRunWide = (status: number | null): boolean => status === 401 || status === 429;
+
+const notAttempted = (repoSlug: string): SkippedRepo => ({
+  repoSlug,
+  reason: "Not attempted — the refresh stopped early.",
+  status: null,
+  missing: false,
+});
 
 // One repo's failure must not cost the rest of the run. Repos are synced in
 // sequence and each has its own cursor, so a failure is isolated by construction:
@@ -98,11 +128,16 @@ export const syncAll = async (
 }> => {
   const repos: { repoSlug: string; prCount: number }[] = [];
   const skipped: SkippedRepo[] = [];
-  for (const slug of repoSlugs) {
+  for (const [index, slug] of repoSlugs.entries()) {
     try {
       repos.push(await syncRepo(deps, slug, nowIso));
     } catch (err) {
-      skipped.push(toSkipped(slug, err));
+      const skip = toSkipped(slug, err);
+      skipped.push(skip);
+      if (isRunWide(skip.status)) {
+        skipped.push(...repoSlugs.slice(index + 1).map(notAttempted));
+        break;
+      }
     }
   }
   return { repos, skipped, totalPrs: repos.reduce((sum, r) => sum + r.prCount, 0) };

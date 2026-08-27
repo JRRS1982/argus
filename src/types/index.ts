@@ -23,6 +23,17 @@ export type ApprovalRecord = {
   approvedOn: string | null; // ISO; null if the API omitted a timestamp
 };
 
+// A repo a sync could not read at all. `missing` distinguishes a repo that has been
+// deleted or hidden from the token (permanent — the roster entry is stale and worth
+// removing) from a transient failure like a 503 or a dropped socket, which must never
+// invite the user to drop a repo they still want.
+export type SkippedRepo = {
+  repoSlug: string;
+  reason: string;
+  status: number | null;
+  missing: boolean;
+};
+
 export type UserRecord = {
   accountId: string;
   displayName: string;

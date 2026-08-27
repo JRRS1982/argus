@@ -140,3 +140,36 @@ describe("TeamTab skipped repositories", () => {
     expect(JSON.parse(patch!.init!.body as string)).toEqual({ kind: "repo", id: "benchmarkme", included: false });
   });
 });
+
+describe("TeamTab wholesale sync failure", () => {
+  it("offers no removal buttons when not a single repo synced", async () => {
+    // A wrong BITBUCKET_WORKSPACE 404s every repo alike. All 3 come back missing,
+    // but none of them is actually gone — so none may be offered for removal.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/sync") {
+          return Promise.resolve({
+            ok: false,
+            json: () => Promise.resolve({
+              repos: [], totalPrs: 0,
+              error: "None of the 3 selected repositories could be refreshed. a: Not found (404).",
+              skipped: ["a", "b", "c"].map((repoSlug) => ({
+                repoSlug, reason: "Not found (404).", status: 404, missing: true,
+              })),
+            }),
+          } as Response);
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+      }),
+    );
+
+    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+
+    await waitFor(() => expect(screen.getByText(/None of the 3 selected repositories/)).toBeTruthy());
+    expect(screen.getByText(/3 repositories were skipped/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Remove from roster/ })).toBeNull();
+    expect(screen.getByText(/more likely one fault/)).toBeTruthy();
+  });
+});
