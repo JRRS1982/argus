@@ -100,3 +100,31 @@ Use the **Team** tab checkboxes — no code changes needed. The roster auto-disc
 - API routes live in `src/app/api/`.
 - The frontend is a single-page React app under `src/app/`.
 - No Jira integration; no per-user account-ID config; no external database.
+
+## Design specs — read before proposing architecture
+
+`docs/superpowers/specs/` holds the decision records for this app, tracked in git. **Check it before
+designing anything structural** — it records what was chosen, what was rejected, and why, which the
+code cannot tell you. A provider-agnostic design sat there approved but unimplemented for two
+months in 2026 because nothing pointed at it, and was nearly duplicated from scratch.
+
+Every spec carries a `**Status:**` line, which must be kept honest:
+
+| Status | Meaning |
+|---|---|
+| `approved for planning` | Agreed, not yet built. **Treat as binding** — build to it, or supersede it deliberately. |
+| `implemented` | Shipped. Read it for rationale, not for plans. |
+| `superseded` | Replaced. Must name its replacement in a banner at the top. |
+
+Superseding is the correct way to disagree with an existing spec: write the new one, state what it
+overturns and why, and mark the old one. Never leave two live specs contradicting each other.
+
+Current specs:
+
+- `2026-06-24-argus-team-pr-insights-design.md` — the four tabs and their metrics. *implemented*
+- `2026-07-28-provider-agnostic-argus-design.md` — port/adapter restructure. *superseded*
+- `2026-07-29-demo-mode-and-motivational-framing-design.md` — demo mode. *implemented*
+- `2026-09-28-dual-provider-design.md` — Bitbucket + GitHub together, canonical identity, migration
+  safety. *approved for planning*
+
+`docs/superpowers/plans/` and `.superpowers/` are local scratch and deliberately untracked.
