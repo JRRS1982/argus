@@ -9,7 +9,9 @@
 MVF has migrated from Bitbucket to GitHub. The migration is **rolling, not a cutover**: GitHub
 repos under the `mvfglobal` org were created variously in April, May and September 2026, so each
 service switched on its own date. A rolling six-month window today reaches back to 2026-03-28 and
-therefore straddles the seam for most services.
+therefore straddles the seam for most services. Measured: the first GitHub PR in the org is
+2026-05-01, the cached Bitbucket history runs to 2026-08-27, so May–August 2026 carries real
+activity on **both** providers simultaneously.
 
 Argus currently reads Bitbucket only. Its cache holds **7,603 pull requests and 8,848 approvals
 spanning 2016-04-06 to 2026-08-27**, across 768 discovered repos (51 included) and 61 users
@@ -183,13 +185,29 @@ Measured against the 51 currently-included repos:
 |---|---|---|
 | Exact slug match on GitHub | 44 | auto-linked, no intervention |
 | Renamed | 1 | `benchmarkmeapp` → `benchmarkme` |
-| Ambiguous | 1 | `chameleon-qa` → possibly `chameleon-acceptance-tests` |
-| Never migrated | 5 | `minimise_renders_*`, `mvf-ui-library`, `sitemaps` |
+| Never migrated | 6 | `chameleon-qa`, `minimise_renders_*`, `mvf-ui-library`, `sitemaps` |
 
-So auto-linking carries ~86% and the manual merge control handles a genuine handful.
+So auto-linking carries ~86%, and exactly one service needs a manual link. `chameleon-qa` and
+`chameleon-acceptance-tests` are confirmed **different repos** — `chameleon-qa` simply never
+migrated, and must not be linked to it.
 
 GitHub's `/orgs/{org}/members` returns the minimal user object with no `name`, so people discovery
 uses a single GraphQL query to batch ~200 members rather than N+1 REST calls.
+
+## The migration automation account
+
+`mvfalcon` is the account that performed the cutover. It authored **796 of the org's 3,679 pull
+requests (21.6%)** between 2026-06-05 and 2026-09-17 — CircleCI pipeline config, `CODEOWNERS`, and
+similar per-repo plumbing, titled e.g. `cutover: add .github/CODEOWNERS`. It is not a copy of
+anyone's Bitbucket work; 2,883 PRs are human-authored.
+
+It must **stay excluded from the roster**. Included, it would rank first on the leaderboard by a
+wide margin and dominate both matrices with automation noise. The existing "Discover adds everything
+excluded by default" rule handles this automatically — the requirement is simply never to tick it,
+and it is named here so a future reader does not tick it by mistake.
+
+No special-casing in code: it is an ordinary excluded person. Encoding a hardcoded bot list would be
+a rule the Team tab already expresses better.
 
 ## Dormant identities
 
@@ -284,6 +302,9 @@ or both without code changes. `isDemoAvailable` generalises from "no Bitbucket c
   Handled by the dormant state; no cached row is affected either way.
 - **Identity auto-linking is a heuristic.** Measured at ~86%; the merge control is the escape hatch,
   and a wrong link is reversible.
-- **Duplicate PRs if a repo was mirrored during transition.** Two provider identities could hold the
-  same logical PR. Detection is deferred; if it appears, dedupe on title plus merge timestamp within
-  a service. Accepted residual risk — it inflates counts slightly rather than losing anything.
+- **Duplicate PRs — measured, and effectively absent.** The concern was that a mirrored repo could
+  hold the same logical PR on both providers. Verified against the live org: **no GitHub PR predates
+  2026-01-01** and the earliest in the org is 2026-05-01, so Bitbucket history was never replayed.
+  The May–August 2026 overlap is *genuine concurrent activity* during the rolling cutover, not
+  duplication, and canonical identity is exactly what merges it correctly. No dedupe logic is
+  planned. If duplicates ever surface, dedupe on title plus merge timestamp within a service.
