@@ -5,6 +5,8 @@ import { upsertUsers, upsertRepos } from "@/lib/db/queries";
 import { getAuthHeader } from "@/lib/bitbucket/client";
 import { fetchWorkspaceMembers, fetchRepos } from "@/lib/bitbucket/discover";
 import { isDemoRequest } from "@/lib/demo/request";
+import { createGitHubProvider } from "@/lib/github/adapter";
+import { discoverProvider } from "@/lib/discovery/discover";
 
 export const runtime = "nodejs";
 
@@ -26,7 +28,12 @@ export async function POST(req: NextRequest) {
     const db = getDb();
     upsertUsers(db, members);
     upsertRepos(db, repos);
-    return NextResponse.json({ users: members.length, repos: repos.length });
+    // GitHub runs after Bitbucket so its repos and people have existing canonical
+    // entities to link onto. Skipped when no token is configured.
+    const github = config.githubToken
+      ? await discoverProvider(db, createGitHubProvider(config.githubOrg, config.githubToken))
+      : null;
+    return NextResponse.json({ users: members.length, repos: repos.length, github });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
