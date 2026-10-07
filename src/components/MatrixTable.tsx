@@ -116,14 +116,14 @@ export default function MatrixTable({
               {matrix.rowUsers.map((u, r) => {
                 const leader = highlightRowMax ? rowLeaderValue(matrix.cells[r]) : null;
                 return (
-                <tr key={u.accountId}>
+                <tr key={u.personId}>
                   <th className={`sticky left-0 bg-white border px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap${rowHeaderWidth ? ` ${rowHeaderWidth}` : ""}`}>{u.displayName}</th>
                   {leading && totalCells(r)}
                   {matrix.colHeaders.map((c, ci) => {
                     // A cell where the row and column are the same person is structurally
                     // impossible (self-approval), not merely empty — grey it out to say so.
                     // Only matches when rows and columns are both users, i.e. the approvals matrix.
-                    if (c.key === u.accountId) {
+                    if (c.key === String(u.personId)) {
                       return (
                         <td
                           key={c.key}

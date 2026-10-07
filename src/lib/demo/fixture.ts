@@ -1,11 +1,11 @@
 import type {
-  ApprovalRecord, PullRequestRecord, RepoRecord, UserRecord,
+  ApprovalRecord, PullRequestRecord, Person, Service,
 } from "@/types";
 import { mulberry32, intBetween, pick } from "./random";
 
 export type DemoDataset = {
-  users: UserRecord[];
-  repos: RepoRecord[];
+  people: Person[];
+  services: Service[];
   prs: PullRequestRecord[];
   approvals: ApprovalRecord[];
 };
@@ -94,12 +94,20 @@ export const buildDemoDataset = (nowIso: string): DemoDataset => {
   const rand = mulberry32(SEED);
   const now = new Date(nowIso).getTime();
 
-  const users: UserRecord[] = PROFILES.map((p) => ({
-    accountId: p.accountId, displayName: p.displayName, included: true,
+  // Canonical ids are the 1-based position in PROFILES / REPOS, so they are stable.
+  const people: Person[] = PROFILES.map((p, i) => ({
+    id: i + 1, displayName: p.displayName, included: true,
+    identities: [{ provider: "bitbucket", accountId: p.accountId }],
   }));
-  const repos: RepoRecord[] = REPOS.map((r) => ({
-    slug: r.slug, name: r.name, projectKey: "DEMO", mainBranch: "main", included: true,
+  const services: Service[] = REPOS.map((r, i) => ({
+    id: i + 1, name: r.name, included: true,
+    identities: [{
+      provider: "bitbucket", repoKey: r.slug, defaultBranch: "main", groupKey: "DEMO",
+      state: "active", lastSyncedOn: null,
+    }],
   }));
+  const personIdOf = (accountId: string): number =>
+    PROFILES.findIndex((p) => p.accountId === accountId) + 1;
 
   const prs: PullRequestRecord[] = [];
   let nextId = 100;
@@ -127,16 +135,19 @@ export const buildDemoDataset = (nowIso: string): DemoDataset => {
       nextId += 1;
 
       prs.push({
-        id,
-        repoSlug: repo.slug,
-        authorAccountId: profile.accountId,
+        provider: "bitbucket",
+        repoKey: repo.slug,
+        number: id,
+        serviceId: repoIdx + 1,
+        personId: personIdOf(profile.accountId),
         title: pick(rand, TITLES),
         state: isOpen ? "OPEN" : "MERGED",
         createdOn: new Date(createdMs).toISOString(),
         // No draft→ready history in demo data, matching a `fast` sync.
         readyForReviewOn: new Date(createdMs).toISOString(),
-        readyIsFallback: true,
+        readyForReviewPrecision: "fallback",
         mergedOn: isOpen ? null : new Date(closedMs).toISOString(),
+        mergedOnPrecision: isOpen ? null : "derived",
         destinationBranch: "main",
         url: `https://example.com/demo/${repo.slug}/pull-requests/${id}`,
       });
@@ -151,14 +162,16 @@ export const buildDemoDataset = (nowIso: string): DemoDataset => {
     if (pr.state !== "MERGED") continue;
     if (rand() < 0.08) continue; // merged with nobody else's approval
 
-    const reviewers = PROFILES.filter((p) => p.accountId !== pr.authorAccountId);
+    const reviewers = PROFILES.filter((p) => personIdOf(p.accountId) !== pr.personId);
     let approved = 0;
     for (const reviewer of reviewers) {
       if (rand() > reviewer.approvalAppetite) continue;
       approvals.push({
-        repoSlug: pr.repoSlug,
-        prId: pr.id,
+        provider: "bitbucket",
+        repoKey: pr.repoKey,
+        prNumber: pr.number,
         approverAccountId: reviewer.accountId,
+        personId: personIdOf(reviewer.accountId),
         approvedOn: pr.mergedOn,
       });
       approved += 1;
@@ -168,13 +181,15 @@ export const buildDemoDataset = (nowIso: string): DemoDataset => {
     if (approved === 0) {
       const reviewer = pick(rand, reviewers);
       approvals.push({
-        repoSlug: pr.repoSlug,
-        prId: pr.id,
+        provider: "bitbucket",
+        repoKey: pr.repoKey,
+        prNumber: pr.number,
         approverAccountId: reviewer.accountId,
+        personId: personIdOf(reviewer.accountId),
         approvedOn: pr.mergedOn,
       });
     }
   }
 
-  return { users, repos, prs, approvals };
+  return { people, services, prs, approvals };
 };

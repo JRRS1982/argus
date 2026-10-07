@@ -10,7 +10,7 @@ const fmtDuration = (ms: number): string => {
 };
 
 export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
   const totalPrs = rows.reduce((n, r) => n + r.prCount, 0);
   const fallbackPrs = rows.reduce((n, r) => n + r.prs.filter((p) => p.readyIsFallback).length, 0);
 
@@ -65,10 +65,10 @@ export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
           <tbody>
             {rows.map((row) => (
               <FragmentRow
-                key={row.accountId}
+                key={row.personId}
                 row={row}
-                isOpen={open === row.accountId}
-                onToggle={() => setOpen(open === row.accountId ? null : row.accountId)}
+                isOpen={open === row.personId}
+                onToggle={() => setOpen(open === row.personId ? null : row.personId)}
               />
             ))}
           </tbody>
@@ -95,9 +95,9 @@ function FragmentRow({
           <td className="border px-3 py-2 bg-gray-50" colSpan={5}>
             <ul className="space-y-1">
               {row.prs.map((pr) => (
-                <li key={`${pr.repoSlug}#${pr.id}`} className="flex justify-between gap-4">
+                <li key={`${pr.repoKey}#${pr.number}`} className="flex justify-between gap-4">
                   <a className="text-blue-600 hover:underline truncate" href={pr.url} target="_blank" rel="noreferrer">
-                    {pr.repoSlug} #{pr.id} — {pr.title}
+                    {pr.repoKey} #{pr.number} — {pr.title}
                   </a>
                   <span className="whitespace-nowrap text-gray-700">
                     {fmtDuration(pr.reviewMs)}{pr.readyIsFallback ? " *" : ""}

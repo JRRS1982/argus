@@ -6,7 +6,7 @@ import type { LeaderboardRow } from "@/types";
 
 const rows: LeaderboardRow[] = [
   {
-    accountId: "u1",
+    personId: 1,
     displayName: "Alice",
     prCount: 2,
     openPrCount: 1,
@@ -14,11 +14,11 @@ const rows: LeaderboardRow[] = [
     medianReviewMs: 7_200_000,
     prs: [
       {
-        id: 1, repoSlug: "repo-a", title: "Fast one", url: "https://example.com/1",
+        number: 1, repoKey: "repo-a", title: "Fast one", url: "https://example.com/1",
         reviewMs: 3_600_000, readyIsFallback: false,
       },
       {
-        id: 2, repoSlug: "repo-a", title: "Slow one", url: "https://example.com/2",
+        number: 2, repoKey: "repo-a", title: "Slow one", url: "https://example.com/2",
         reviewMs: 10_800_000, readyIsFallback: true,
       },
     ],

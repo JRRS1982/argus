@@ -9,8 +9,15 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   try {
     if (isDemoRequest(req.nextUrl)) {
-      const { users, repos } = buildDemoDataset(new Date().toISOString());
-      return NextResponse.json({ users, repos });
+      // The roster UI still speaks accounts and slugs; the demo identities carry both.
+      const { people, services } = buildDemoDataset(new Date().toISOString());
+      return NextResponse.json({
+        users: people.map((p) => ({ accountId: p.identities[0].accountId, displayName: p.displayName, included: p.included })),
+        repos: services.map((s) => ({
+          slug: s.identities[0].repoKey, name: s.name, projectKey: s.identities[0].groupKey,
+          mainBranch: s.identities[0].defaultBranch, included: s.included,
+        })),
+      });
     }
     const db = getDb();
     return NextResponse.json({ users: getUsers(db), repos: getRepos(db) });

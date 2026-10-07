@@ -1,25 +1,33 @@
 import type { InsightsWindow } from "@/lib/window";
 
-export type PullRequestState = "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED";
+// DECLINED and SUPERSEDED both mean abandoned work, so they collapse to CLOSED at the
+// provider boundary: nothing downstream distinguishes them, and a second provider
+// would otherwise need its own vocabulary.
+export type PullRequestState = "OPEN" | "MERGED" | "CLOSED";
 
 export type PullRequestRecord = {
-  id: number;              // Bitbucket PR id — unique only within its repo
-  repoSlug: string;
-  authorAccountId: string;
+  provider: ProviderId;
+  repoKey: string;         // the provider's repo identifier — unique only within a provider
+  number: number;          // unique only within its repo
+  serviceId: number;       // canonical service the repo belongs to
+  personId: number;        // canonical person who authored it
   title: string;
   state: PullRequestState;
   createdOn: string;       // ISO
   readyForReviewOn: string; // ISO; equals createdOn when no draft transition found
-  readyIsFallback: boolean; // true when readyForReviewOn fell back to createdOn
+  readyForReviewPrecision: Precision; // "fallback" when readyForReviewOn fell back to createdOn
   mergedOn: string | null; // ISO or null
+  mergedOnPrecision: Precision | null;
   destinationBranch: string;
   url: string;
 };
 
 export type ApprovalRecord = {
-  repoSlug: string;
-  prId: number;
+  provider: ProviderId;
+  repoKey: string;
+  prNumber: number;
   approverAccountId: string;
+  personId: number;
   approvedOn: string | null; // ISO; null if the API omitted a timestamp
 };
 
@@ -51,8 +59,8 @@ export type RepoRecord = {
 // ── View models ──────────────────────────────────────────────────────
 
 export type LeaderboardPR = {
-  id: number;
-  repoSlug: string;
+  number: number;
+  repoKey: string;
   title: string;
   url: string;
   reviewMs: number;
@@ -60,7 +68,7 @@ export type LeaderboardPR = {
 };
 
 export type LeaderboardRow = {
-  accountId: string;
+  personId: number;
   displayName: string;
   prCount: number;      // merged PRs with a measured duration
   openPrCount: number;  // still-open PRs; merged + open reconciles with the PRs-created tab
@@ -70,7 +78,7 @@ export type LeaderboardRow = {
 };
 
 export type Matrix = {
-  rowUsers: { accountId: string; displayName: string }[];
+  rowUsers: { personId: number; displayName: string }[];
   colHeaders: { key: string; label: string }[];
   cells: number[][];   // cells[rowIndex][colIndex]
   rowTotals: number[];

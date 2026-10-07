@@ -208,3 +208,20 @@ export const getLastRefreshedByProvider = (
     lastSyncedOn: r.last,
     archived: !!r.archived,
   }));
+
+// Resolve-or-create for sync, which meets authors and approvers nobody ever discovered.
+// Unlike upsertPersonIdentity this never renames: the account id only stands in as a
+// name when no better one exists, and must not overwrite a real display name.
+export const resolvePersonId = (db: Database.Database, provider: ProviderId, accountId: string): number => {
+  const row = db.prepare(
+    `SELECT person_id FROM person_identities WHERE provider = ? AND account_id = ?`,
+  ).get(provider, accountId) as { person_id: number } | undefined;
+  return row ? row.person_id : upsertPersonIdentity(db, provider, accountId, accountId);
+};
+
+export const resolveServiceId = (db: Database.Database, provider: ProviderId, repoKey: string): number => {
+  const row = db.prepare(
+    `SELECT service_id FROM service_identities WHERE provider = ? AND repo_key = ?`,
+  ).get(provider, repoKey) as { service_id: number } | undefined;
+  return row ? row.service_id : upsertServiceIdentity(db, provider, repoKey, repoKey, "main", null);
+};

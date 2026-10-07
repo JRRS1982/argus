@@ -1,7 +1,9 @@
 import type Database from "better-sqlite3";
 import type {
   PullRequestRecord, ApprovalRecord, UserRecord, RepoRecord, PullRequestState,
+  ProviderId, Precision,
 } from "@/types";
+import { upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
 
 export const upsertUsers = (
   db: Database.Database,
@@ -12,7 +14,12 @@ export const upsertUsers = (
     `INSERT INTO users (account_id, display_name, included) VALUES (@accountId, @displayName, 0)
      ON CONFLICT(account_id) DO UPDATE SET display_name = excluded.display_name`,
   );
-  const tx = db.transaction((rows: typeof users) => rows.forEach((r) => stmt.run(r)));
+  // The roster still speaks Bitbucket account ids; mirroring into the canonical tables
+  // keeps what the user ticks and what the analytics read the same thing.
+  const tx = db.transaction((rows: typeof users) => rows.forEach((r) => {
+    stmt.run(r);
+    upsertPersonIdentity(db, "bitbucket", r.accountId, r.displayName);
+  }));
   tx(users);
 };
 
@@ -29,44 +36,59 @@ export const upsertRepos = (
        project_key = excluded.project_key,
        main_branch = excluded.main_branch`,
   );
-  const tx = db.transaction((rows: typeof repos) => rows.forEach((r) => stmt.run(r)));
+  const tx = db.transaction((rows: typeof repos) => rows.forEach((r) => {
+    stmt.run(r);
+    upsertServiceIdentity(db, "bitbucket", r.slug, r.name, r.mainBranch, r.projectKey);
+  }));
   tx(repos);
 };
 
 export const setUserIncluded = (db: Database.Database, accountId: string, included: boolean): void => {
   db.prepare(`UPDATE users SET included = ? WHERE account_id = ?`).run(included ? 1 : 0, accountId);
+  db.prepare(
+    `UPDATE people SET included = ?
+     WHERE id IN (SELECT person_id FROM person_identities WHERE provider = 'bitbucket' AND account_id = ?)`,
+  ).run(included ? 1 : 0, accountId);
 };
 
 export const setRepoIncluded = (db: Database.Database, slug: string, included: boolean): void => {
   db.prepare(`UPDATE repos SET included = ? WHERE slug = ?`).run(included ? 1 : 0, slug);
+  db.prepare(
+    `UPDATE services SET included = ?
+     WHERE id IN (SELECT service_id FROM service_identities WHERE provider = 'bitbucket' AND repo_key = ?)`,
+  ).run(included ? 1 : 0, slug);
 };
 
 export const upsertPullRequest = (db: Database.Database, pr: PullRequestRecord): void => {
   db.prepare(
     `INSERT INTO pull_requests
-       (repo_slug, id, author_account_id, title, state, created_on,
-        ready_for_review_on, ready_is_fallback, merged_on, destination_branch, url)
+       (provider, repo_key, number, service_id, person_id, title, state, created_on,
+        ready_for_review_on, ready_for_review_precision, merged_on, merged_on_precision,
+        destination_branch, url)
      VALUES
-       (@repoSlug, @id, @authorAccountId, @title, @state, @createdOn,
-        @readyForReviewOn, @readyIsFallback, @mergedOn, @destinationBranch, @url)
-     ON CONFLICT(repo_slug, id) DO UPDATE SET
-       author_account_id = excluded.author_account_id,
+       (@provider, @repoKey, @number, @serviceId, @personId, @title, @state, @createdOn,
+        @readyForReviewOn, @readyForReviewPrecision, @mergedOn, @mergedOnPrecision,
+        @destinationBranch, @url)
+     ON CONFLICT(provider, repo_key, number) DO UPDATE SET
+       service_id = excluded.service_id,
+       person_id = excluded.person_id,
        title = excluded.title,
        state = excluded.state,
        created_on = excluded.created_on,
-       -- A derived ready time (fallback = 0) is better data than a createdOn
-       -- guess, so never let a later fast sync overwrite one.
+       -- A derived or exact ready time is better data than a createdOn guess, so
+       -- never let a later fast sync (fallback) overwrite one.
        ready_for_review_on = CASE
-         WHEN excluded.ready_is_fallback = 0 THEN excluded.ready_for_review_on
-         WHEN pull_requests.ready_is_fallback = 0 THEN pull_requests.ready_for_review_on
+         WHEN excluded.ready_for_review_precision != 'fallback' THEN excluded.ready_for_review_on
+         WHEN pull_requests.ready_for_review_precision != 'fallback' THEN pull_requests.ready_for_review_on
          ELSE excluded.ready_for_review_on END,
-       ready_is_fallback = CASE
-         WHEN excluded.ready_is_fallback = 0 THEN 0
-         ELSE pull_requests.ready_is_fallback END,
+       ready_for_review_precision = CASE
+         WHEN excluded.ready_for_review_precision != 'fallback' THEN excluded.ready_for_review_precision
+         ELSE pull_requests.ready_for_review_precision END,
        merged_on = excluded.merged_on,
+       merged_on_precision = excluded.merged_on_precision,
        destination_branch = excluded.destination_branch,
        url = excluded.url`,
-  ).run({ ...pr, readyIsFallback: pr.readyIsFallback ? 1 : 0 });
+  ).run(pr);
 };
 
 // Additive counterpart to replaceApprovals, for the fast (list-only) sync path:
@@ -77,24 +99,25 @@ export const mergeApprovals = (
   db: Database.Database, approvals: ApprovalRecord[],
 ): void => {
   const ins = db.prepare(
-    `INSERT INTO approvals (repo_slug, pr_id, approver_account_id, approved_on)
-     VALUES (@repoSlug, @prId, @approverAccountId, @approvedOn)
-     ON CONFLICT(repo_slug, pr_id, approver_account_id) DO NOTHING`,
+    `INSERT INTO approvals (provider, repo_key, pr_number, approver_account_id, person_id, approved_on)
+     VALUES (@provider, @repoKey, @prNumber, @approverAccountId, @personId, @approvedOn)
+     ON CONFLICT(provider, repo_key, pr_number, approver_account_id) DO NOTHING`,
   );
   const tx = db.transaction((rows: ApprovalRecord[]) => rows.forEach((a) => ins.run(a)));
   tx(approvals);
 };
 
 export const replaceApprovals = (
-  db: Database.Database, repoSlug: string, prId: number, approvals: ApprovalRecord[],
+  db: Database.Database, provider: ProviderId, repoKey: string, prNumber: number,
+  approvals: ApprovalRecord[],
 ): void => {
-  const del = db.prepare(`DELETE FROM approvals WHERE repo_slug = ? AND pr_id = ?`);
+  const del = db.prepare(`DELETE FROM approvals WHERE provider = ? AND repo_key = ? AND pr_number = ?`);
   const ins = db.prepare(
-    `INSERT OR REPLACE INTO approvals (repo_slug, pr_id, approver_account_id, approved_on)
-     VALUES (@repoSlug, @prId, @approverAccountId, @approvedOn)`,
+    `INSERT OR REPLACE INTO approvals (provider, repo_key, pr_number, approver_account_id, person_id, approved_on)
+     VALUES (@provider, @repoKey, @prNumber, @approverAccountId, @personId, @approvedOn)`,
   );
   const tx = db.transaction(() => {
-    del.run(repoSlug, prId);
+    del.run(provider, repoKey, prNumber);
     approvals.forEach((a) => ins.run(a));
   });
   tx();
@@ -113,45 +136,46 @@ export const getRepos = (db: Database.Database): RepoRecord[] =>
     .map((r) => ({ slug: r.slug, name: r.name, projectKey: r.project_key, mainBranch: r.main_branch, included: !!r.included }));
 
 type PrRow = {
-  repo_slug: string; id: number; author_account_id: string; title: string; state: string;
-  created_on: string; ready_for_review_on: string; ready_is_fallback: number;
-  merged_on: string | null; destination_branch: string; url: string;
+  provider: string; repo_key: string; number: number; service_id: number; person_id: number;
+  title: string; state: string; created_on: string; ready_for_review_on: string;
+  ready_for_review_precision: string; merged_on: string | null; merged_on_precision: string | null;
+  destination_branch: string; url: string;
 };
 export const getPullRequests = (db: Database.Database): PullRequestRecord[] =>
-  (db.prepare(`SELECT repo_slug, id, author_account_id, title, state, created_on, ready_for_review_on, ready_is_fallback, merged_on, destination_branch, url FROM pull_requests`).all() as PrRow[]).map((r) => ({
-    id: r.id, repoSlug: r.repo_slug, authorAccountId: r.author_account_id, title: r.title,
-    state: r.state as PullRequestState, createdOn: r.created_on, readyForReviewOn: r.ready_for_review_on,
-    readyIsFallback: !!r.ready_is_fallback, mergedOn: r.merged_on,
+  (db.prepare(`SELECT provider, repo_key, number, service_id, person_id, title, state, created_on, ready_for_review_on, ready_for_review_precision, merged_on, merged_on_precision, destination_branch, url FROM pull_requests`).all() as PrRow[]).map((r) => ({
+    provider: r.provider as ProviderId, repoKey: r.repo_key, number: r.number,
+    serviceId: r.service_id, personId: r.person_id, title: r.title,
+    // Rows migrated from before CLOSED existed still say DECLINED/SUPERSEDED; both
+    // always meant abandoned, so they read back as CLOSED rather than as unknown states.
+    state: (r.state === "OPEN" || r.state === "MERGED" ? r.state : "CLOSED") as PullRequestState,
+    createdOn: r.created_on, readyForReviewOn: r.ready_for_review_on,
+    readyForReviewPrecision: r.ready_for_review_precision as Precision, mergedOn: r.merged_on,
+    mergedOnPrecision: r.merged_on_precision as Precision | null,
     destinationBranch: r.destination_branch, url: r.url,
   }));
 
-type ApprovalRow = { repo_slug: string; pr_id: number; approver_account_id: string; approved_on: string | null };
+type ApprovalRow = {
+  provider: string; repo_key: string; pr_number: number; approver_account_id: string;
+  person_id: number; approved_on: string | null;
+};
 export const getApprovals = (db: Database.Database): ApprovalRecord[] =>
-  (db.prepare(`SELECT repo_slug, pr_id, approver_account_id, approved_on FROM approvals`).all() as ApprovalRow[]).map((r) => ({
-    repoSlug: r.repo_slug, prId: r.pr_id, approverAccountId: r.approver_account_id, approvedOn: r.approved_on,
+  (db.prepare(`SELECT provider, repo_key, pr_number, approver_account_id, person_id, approved_on FROM approvals`).all() as ApprovalRow[]).map((r) => ({
+    provider: r.provider as ProviderId, repoKey: r.repo_key, prNumber: r.pr_number,
+    approverAccountId: r.approver_account_id, personId: r.person_id, approvedOn: r.approved_on,
   }));
 
-export const getLastSynced = (db: Database.Database, repoSlug: string): string | null => {
-  const row = db.prepare(`SELECT last_synced_on FROM sync_state WHERE repo_slug = ?`).get(repoSlug) as
-    | { last_synced_on: string } | undefined;
-  return row ? row.last_synced_on : null;
-};
-
-// When the data was last refreshed: the newest sync stamp among included repos.
-// syncAll stamps every repo in a run with the same instant, so after a successful
-// Refresh this is simply when that refresh ran. Null until a first sync happens.
-export const getLastRefreshed = (db: Database.Database): string | null => {
+// The incremental cursor lives on the service identity, so each provider's copy of a
+// service keeps its own.
+export const getLastSynced = (db: Database.Database, provider: ProviderId, repoKey: string): string | null => {
   const row = db.prepare(
-    `SELECT MAX(last_synced_on) AS last
-     FROM sync_state s JOIN repos r ON r.slug = s.repo_slug
-     WHERE r.included = 1`,
-  ).get() as { last: string | null };
-  return row.last;
+    `SELECT last_synced_on FROM service_identities WHERE provider = ? AND repo_key = ?`,
+  ).get(provider, repoKey) as { last_synced_on: string | null } | undefined;
+  return row?.last_synced_on ?? null;
 };
 
-export const setLastSynced = (db: Database.Database, repoSlug: string, iso: string): void => {
+// A no-op for an unknown identity: sync registers the identity before it stamps it.
+export const setLastSynced = (db: Database.Database, provider: ProviderId, repoKey: string, iso: string): void => {
   db.prepare(
-    `INSERT INTO sync_state (repo_slug, last_synced_on) VALUES (?, ?)
-     ON CONFLICT(repo_slug) DO UPDATE SET last_synced_on = excluded.last_synced_on`,
-  ).run(repoSlug, iso);
+    `UPDATE service_identities SET last_synced_on = ? WHERE provider = ? AND repo_key = ?`,
+  ).run(iso, provider, repoKey);
 };

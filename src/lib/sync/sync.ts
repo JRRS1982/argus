@@ -1,8 +1,9 @@
 import type Database from "better-sqlite3";
-import type { PullRequestRecord, SkippedRepo } from "@/types";
+import type { ApprovalRecord, ProviderId, PullRequestRecord, SkippedRepo } from "@/types";
 import { upsertPullRequest, replaceApprovals, mergeApprovals, getLastSynced, setLastSynced } from "@/lib/db/queries";
+import { resolvePersonId, resolveServiceId } from "@/lib/db/canonical";
 import {
-  deriveReadyForReview, extractApprovals,
+  deriveReadyForReview, extractApprovals, type BitbucketApproval,
   fetchPullRequestsUpdatedSince, fetchPullRequestActivity,
 } from "@/lib/bitbucket/pulls";
 import { sixMonthsAgoIso, EPOCH_ISO } from "@/lib/window";
@@ -43,6 +44,8 @@ const tagRepoLevel = (err: unknown): unknown => {
 const isRepoLevel = (err: unknown): boolean =>
   typeof err === "object" && err !== null && REPO_LEVEL in err;
 
+const PROVIDER: ProviderId = "bitbucket";
+
 export const syncRepo = async (
   deps: SyncDeps,
   repoSlug: string,
@@ -50,7 +53,7 @@ export const syncRepo = async (
 ): Promise<{ repoSlug: string; prCount: number }> => {
   const since = deps.backfill
     ? EPOCH_ISO
-    : getLastSynced(deps.db, repoSlug) ?? sixMonthsAgoIso(nowIso);
+    : getLastSynced(deps.db, PROVIDER, repoSlug) ?? sixMonthsAgoIso(nowIso);
   let partials;
   try {
     partials = await deps.fetchPRs(deps.workspace, repoSlug, since, deps.auth);
@@ -58,28 +61,45 @@ export const syncRepo = async (
     throw tagRepoLevel(err);
   }
   const mode = deps.mode ?? "deep";
+  // Registered only once the repo has answered, so a repo that 404s leaves no trace.
+  const serviceId = resolveServiceId(deps.db, PROVIDER, repoSlug);
+
+  const toApproval = (a: BitbucketApproval): ApprovalRecord => ({
+    provider: PROVIDER, repoKey: a.repoSlug, prNumber: a.prId,
+    approverAccountId: a.approverAccountId,
+    personId: resolvePersonId(deps.db, PROVIDER, a.approverAccountId),
+    approvedOn: a.approvedOn,
+  });
 
   for (const partial of partials) {
     // `approvals` must not reach upsertPullRequest — better-sqlite3 rejects
     // named parameters that the statement does not declare.
-    const { approvals: participantApprovals, ...prFields } = partial;
+    const { approvals: participantApprovals, id, repoSlug: _slug, authorAccountId, ...prFields } = partial;
+    // Bitbucket's merge time is the updated_on proxy, never an exact timestamp.
+    const base = {
+      ...prFields, provider: PROVIDER, repoKey: repoSlug, number: id, serviceId,
+      personId: resolvePersonId(deps.db, PROVIDER, authorAccountId),
+      mergedOnPrecision: prFields.mergedOn === null ? null : "derived",
+    } as const;
 
     if (mode === "fast") {
       const pr: PullRequestRecord = {
-        ...prFields, readyForReviewOn: prFields.createdOn, readyIsFallback: true,
+        ...base, readyForReviewOn: prFields.createdOn, readyForReviewPrecision: "fallback",
       };
       upsertPullRequest(deps.db, pr);
-      mergeApprovals(deps.db, participantApprovals);
+      mergeApprovals(deps.db, participantApprovals.map(toApproval));
       continue;
     }
-    const activity = await deps.fetchActivity(deps.workspace, repoSlug, partial.id, deps.auth);
+    const activity = await deps.fetchActivity(deps.workspace, repoSlug, id, deps.auth);
     const { readyForReviewOn, readyIsFallback } = deriveReadyForReview(prFields.createdOn, activity);
-    const pr: PullRequestRecord = { ...prFields, readyForReviewOn, readyIsFallback };
+    const pr: PullRequestRecord = {
+      ...base, readyForReviewOn, readyForReviewPrecision: readyIsFallback ? "fallback" : "derived",
+    };
     upsertPullRequest(deps.db, pr);
-    replaceApprovals(deps.db, repoSlug, partial.id, extractApprovals(repoSlug, partial.id, activity));
+    replaceApprovals(deps.db, PROVIDER, repoSlug, id, extractApprovals(repoSlug, id, activity).map(toApproval));
   }
 
-  setLastSynced(deps.db, repoSlug, nowIso);
+  setLastSynced(deps.db, PROVIDER, repoSlug, nowIso);
   return { repoSlug, prCount: partials.length };
 };
 

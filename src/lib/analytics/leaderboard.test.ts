@@ -1,22 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { computeLeaderboard } from "@/lib/analytics/leaderboard";
 import { computePrsCreatedMatrix } from "@/lib/analytics/matrices";
-import type { PullRequestRecord, RepoRecord, UserRecord } from "@/types";
+import type { PullRequestRecord, Service, Person } from "@/types";
 
-const repos: RepoRecord[] = [
-  { slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main", included: true },
+const repos: Service[] = [
+  { id: 1, name: "Repo A", included: true, identities: [{ provider: "bitbucket", repoKey: "repo-a", defaultBranch: "main", groupKey: null, state: "active", lastSyncedOn: null }] },
 ];
-const users: UserRecord[] = [
-  { accountId: "u1", displayName: "Alice", included: true },
-  { accountId: "u2", displayName: "Bob", included: true },
-  { accountId: "u3", displayName: "Excluded", included: false },
+const users: Person[] = [
+  { id: 1, displayName: "Alice", included: true, identities: [] },
+  { id: 2, displayName: "Bob", included: true, identities: [] },
+  { id: 3, displayName: "Excluded", included: false, identities: [] },
 ];
 
 const pr = (over: Partial<PullRequestRecord>): PullRequestRecord => ({
-  id: 1, repoSlug: "repo-a", authorAccountId: "u1", title: "T", state: "MERGED",
+  provider: "bitbucket", number: 1, repoKey: "repo-a", serviceId: 1, personId: 1, title: "T", state: "MERGED",
   createdOn: "2026-02-01T00:00:00.000Z", readyForReviewOn: "2026-02-01T00:00:00.000Z",
-  readyIsFallback: false, mergedOn: "2026-02-02T00:00:00.000Z",
-  destinationBranch: "main", url: "https://x/1", ...over,
+  readyForReviewPrecision: "derived", mergedOn: "2026-02-02T00:00:00.000Z",
+  mergedOnPrecision: "derived", destinationBranch: "main", url: "https://x/1", ...over,
 });
 
 const SINCE = "2026-01-01T00:00:00.000Z";
@@ -26,9 +26,9 @@ const DAY = 86_400_000;
 describe("computeLeaderboard", () => {
   it("averages each author's merged-to-main PR review times and orders rows alphabetically", () => {
     const prs = [
-      pr({ id: 1, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }), // 1d
-      pr({ id: 2, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-04T00:00:00.000Z" }), // 3d -> avg 2d
-      pr({ id: 3, authorAccountId: "u2", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T12:00:00.000Z" }), // 1.5d
+      pr({ number: 1, personId: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }), // 1d
+      pr({ number: 2, personId: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-04T00:00:00.000Z" }), // 3d -> avg 2d
+      pr({ number: 3, personId: 2, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T12:00:00.000Z" }), // 1.5d
     ];
     const board = computeLeaderboard(prs, repos, users, SINCE);
     expect(board.map((r) => r.displayName)).toEqual(["Alice", "Bob"]); // alphabetical, despite Bob (1.5d) being faster than Alice (2d)
@@ -39,12 +39,12 @@ describe("computeLeaderboard", () => {
   it("reports a median that ignores outliers", () => {
     const prs = [
       // Alice: 1d, 1d, 30d -> median 1d, average ~10.7d (one stale PR skews the mean)
-      pr({ id: 1, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
-      pr({ id: 2, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
-      pr({ id: 3, authorAccountId: "u1", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-03-03T00:00:00.000Z" }),
+      pr({ number: 1, personId: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
+      pr({ number: 2, personId: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z" }),
+      pr({ number: 3, personId: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-03-03T00:00:00.000Z" }),
       // Bob: 2d, 4d -> median 3d, average 3d
-      pr({ id: 4, authorAccountId: "u2", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-03T00:00:00.000Z" }),
-      pr({ id: 5, authorAccountId: "u2", readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-05T00:00:00.000Z" }),
+      pr({ number: 4, personId: 2, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-03T00:00:00.000Z" }),
+      pr({ number: 5, personId: 2, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-05T00:00:00.000Z" }),
     ];
     const board = computeLeaderboard(prs, repos, users, SINCE);
     const alice = board.find((r) => r.displayName === "Alice")!;
@@ -56,26 +56,26 @@ describe("computeLeaderboard", () => {
   });
 
   it("honours repo include/exclude toggles, like the matrices do", () => {
-    const withExcluded: RepoRecord[] = [
+    const withExcluded: Service[] = [
       ...repos,
-      { slug: "repo-x", name: "Repo X", projectKey: null, mainBranch: "main", included: false },
+      { id: 3, name: "Repo X", included: false, identities: [{ provider: "bitbucket", repoKey: "repo-x", defaultBranch: "main", groupKey: null, state: "active", lastSyncedOn: null }] },
     ];
     const prs = [
-      pr({ id: 1, repoSlug: "repo-a" }),
-      pr({ id: 2, repoSlug: "repo-x" }), // excluded repo -> must not count
+      pr({ number: 1, repoKey: "repo-a", serviceId: 1 }),
+      pr({ number: 2, repoKey: "repo-x", serviceId: 3 }), // excluded repo -> must not count
     ];
     const [alice] = computeLeaderboard(prs, withExcluded, users, SINCE);
     expect(alice.prCount).toBe(1);
-    expect(alice.prs.map((p) => p.repoSlug)).toEqual(["repo-a"]);
+    expect(alice.prs.map((p) => p.repoKey)).toEqual(["repo-a"]);
   });
 
   it("reports open PRs so merged + open reconciles with the PRs-created matrix", () => {
     const prs = [
-      pr({ id: 1, authorAccountId: "u1", state: "MERGED" }),
-      pr({ id: 2, authorAccountId: "u1", state: "OPEN", mergedOn: null }),
-      pr({ id: 3, authorAccountId: "u1", state: "OPEN", mergedOn: null }),
-      pr({ id: 4, authorAccountId: "u1", state: "DECLINED", mergedOn: null }),      // abandoned, counted nowhere
-      pr({ id: 5, authorAccountId: "u1", state: "OPEN", mergedOn: null, destinationBranch: "develop" }), // not main
+      pr({ number: 1, personId: 1, state: "MERGED" }),
+      pr({ number: 2, personId: 1, state: "OPEN", mergedOn: null }),
+      pr({ number: 3, personId: 1, state: "OPEN", mergedOn: null }),
+      pr({ number: 4, personId: 1, state: "CLOSED", mergedOn: null }),      // abandoned, counted nowhere
+      pr({ number: 5, personId: 1, state: "OPEN", mergedOn: null, destinationBranch: "develop" }), // not main
     ];
     const [alice] = computeLeaderboard(prs, repos, users, SINCE);
     expect(alice.prCount).toBe(1);
@@ -83,17 +83,17 @@ describe("computeLeaderboard", () => {
 
     // Same population as the created matrix: 1 merged + 2 open = 3.
     const created = computePrsCreatedMatrix(prs, repos, users, SINCE);
-    const aliceRow = created.rowUsers.findIndex((u) => u.accountId === "u1");
+    const aliceRow = created.rowUsers.findIndex((u) => u.personId === 1);
     expect(created.rowTotals[aliceRow]).toBe(alice.prCount + alice.openPrCount);
   });
 
   it("excludes non-merged, non-main, out-of-window PRs and excluded users", () => {
     const prs = [
-      pr({ id: 1, authorAccountId: "u1" }),
-      pr({ id: 2, authorAccountId: "u1", state: "OPEN", mergedOn: null }),       // not merged
-      pr({ id: 3, authorAccountId: "u1", destinationBranch: "feature" }),        // not main
-      pr({ id: 4, authorAccountId: "u1", mergedOn: "2025-06-01T00:00:00.000Z" }), // before window
-      pr({ id: 5, authorAccountId: "u3" }),                                       // excluded user
+      pr({ number: 1, personId: 1 }),
+      pr({ number: 2, personId: 1, state: "OPEN", mergedOn: null }),       // not merged
+      pr({ number: 3, personId: 1, destinationBranch: "feature" }),        // not main
+      pr({ number: 4, personId: 1, mergedOn: "2025-06-01T00:00:00.000Z" }), // before window
+      pr({ number: 5, personId: 3 }),                                       // excluded user
     ];
     const board = computeLeaderboard(prs, repos, users, SINCE);
     expect(board).toHaveLength(1);
@@ -103,34 +103,35 @@ describe("computeLeaderboard", () => {
 
   it("sorts each author's PR list slowest-first and flags fallbacks", () => {
     const prs = [
-      pr({ id: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z", readyIsFallback: false }),
-      pr({ id: 2, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-05T00:00:00.000Z", readyIsFallback: true }),
+      pr({ number: 1, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-02T00:00:00.000Z", readyForReviewPrecision: "derived" }),
+      pr({ number: 2, readyForReviewOn: "2026-02-01T00:00:00.000Z", mergedOn: "2026-02-05T00:00:00.000Z", readyForReviewPrecision: "fallback" }),
     ];
     const [alice] = computeLeaderboard(prs, repos, users, SINCE);
-    expect(alice.prs.map((p) => p.id)).toEqual([2, 1]); // slowest first
+    expect(alice.prs.map((p) => p.number)).toEqual([2, 1]); // slowest first
     expect(alice.prs[0].readyIsFallback).toBe(true);
   });
 
   it("orders engineers by name, not by speed, so the table is not a scoreboard", () => {
-    const repos: RepoRecord[] = [
-      { slug: "r1", name: "r1", projectKey: null, mainBranch: "main", included: true },
+    const repos: Service[] = [
+      { id: 1, name: "r1", included: true, identities: [{ provider: "bitbucket", repoKey: "r1", defaultBranch: "main", groupKey: null, state: "active", lastSyncedOn: null }] },
     ];
-    const users: UserRecord[] = [
-      { accountId: "u1", displayName: "Zara", included: true },
-      { accountId: "u2", displayName: "adam", included: true },
-      { accountId: "u3", displayName: "Mira", included: true },
+    const users: Person[] = [
+      { id: 1, displayName: "Zara", included: true, identities: [] },
+      { id: 2, displayName: "adam", included: true, identities: [] },
+      { id: 3, displayName: "Mira", included: true, identities: [] },
     ];
-    const pr = (id: number, author: string, days: number): PullRequestRecord => ({
-      id, repoSlug: "r1", authorAccountId: author, title: `pr ${id}`, state: "MERGED",
+    const pr = (number: number, personId: number, days: number): PullRequestRecord => ({
+      provider: "bitbucket", number, repoKey: "r1", serviceId: 1, personId, title: `pr ${number}`, state: "MERGED",
       createdOn: "2026-01-01T00:00:00.000Z",
       readyForReviewOn: "2026-01-01T00:00:00.000Z",
-      readyIsFallback: true,
+      readyForReviewPrecision: "fallback",
       mergedOn: new Date(Date.UTC(2026, 0, 1 + days)).toISOString(),
+      mergedOnPrecision: "derived",
       destinationBranch: "main",
       url: "https://example.com",
     });
     // Zara is fastest, adam slowest — so speed order and name order disagree.
-    const prs = [pr(1, "u1", 1), pr(2, "u2", 9), pr(3, "u3", 5)];
+    const prs = [pr(1, 1, 1), pr(2, 2, 9), pr(3, 3, 5)];
 
     const rows = computeLeaderboard(prs, repos, users, "2025-01-01T00:00:00.000Z");
     expect(rows.map((r) => r.displayName)).toEqual(["adam", "Mira", "Zara"]);

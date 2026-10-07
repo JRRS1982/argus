@@ -32,9 +32,9 @@ describe("syncRepo", () => {
     expect(result).toEqual({ repoSlug: "repo-a", prCount: 1 });
     const prs = getPullRequests(db);
     expect(prs[0].readyForReviewOn).toBe("2026-01-02T00:00:00.000Z");
-    expect(prs[0].readyIsFallback).toBe(false);
+    expect(prs[0].readyForReviewPrecision === "fallback").toBe(false);
     expect(getApprovals(db).map((a) => a.approverAccountId)).toEqual(["u2"]);
-    expect(getLastSynced(db, "repo-a")).toBe("2026-06-24T00:00:00.000Z");
+    expect(getLastSynced(db, "bitbucket", "repo-a")).toBe("2026-06-24T00:00:00.000Z");
     db.close();
   });
 
@@ -46,7 +46,7 @@ describe("syncRepo", () => {
     await syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z");
     expect(fetchPRs.mock.calls[0][2]).toBe("2025-12-24T00:00:00.000Z"); // 6 months before now
 
-    setLastSynced(db, "repo-a", "2026-06-01T00:00:00.000Z");
+    setLastSynced(db, "bitbucket", "repo-a", "2026-06-01T00:00:00.000Z");
     await syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z");
     expect(fetchPRs.mock.calls[1][2]).toBe("2026-06-01T00:00:00.000Z"); // stored cursor
     db.close();
@@ -57,7 +57,7 @@ describe("syncRepo", () => {
     const fetchPRs = vi.fn().mockResolvedValue([]);
     const deps: SyncDeps = { db, workspace: "ws", auth: "auth", fetchPRs, fetchActivity: vi.fn(), backfill: true };
 
-    setLastSynced(db, "repo-a", "2026-06-01T00:00:00.000Z");
+    setLastSynced(db, "bitbucket", "repo-a", "2026-06-01T00:00:00.000Z");
     await syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z");
     expect(fetchPRs.mock.calls[0][2]).toBe("1970-01-01T00:00:00.000Z");
     db.close();
@@ -78,8 +78,8 @@ describe("syncRepo", () => {
     expect(getApprovals(db).map((a) => a.approverAccountId).sort()).toEqual(["u2", "u3"]);
     const prs = getPullRequests(db);
     expect(prs[0].readyForReviewOn).toBe(basePr.createdOn);
-    expect(prs[0].readyIsFallback).toBe(true);
-    expect(getLastSynced(db, "repo-a")).toBe("2026-06-24T00:00:00.000Z");
+    expect(prs[0].readyForReviewPrecision === "fallback").toBe(true);
+    expect(getLastSynced(db, "bitbucket", "repo-a")).toBe("2026-06-24T00:00:00.000Z");
     db.close();
   });
 
@@ -104,7 +104,7 @@ describe("syncRepo", () => {
 
     const prs = getPullRequests(db);
     expect(prs[0].readyForReviewOn).toBe("2026-01-02T00:00:00.000Z"); // preserved
-    expect(prs[0].readyIsFallback).toBe(false);                        // preserved
+    expect(prs[0].readyForReviewPrecision === "fallback").toBe(false);                        // preserved
     const approvals = getApprovals(db).sort((a, b) => a.approverAccountId.localeCompare(b.approverAccountId));
     expect(approvals.map((a) => a.approverAccountId)).toEqual(["u2", "u3"]); // u3 added
     expect(approvals[0].approvedOn).toBe("2026-01-04T00:00:00.000Z");        // timestamp kept
@@ -119,7 +119,7 @@ describe("syncRepo", () => {
       fetchActivity: vi.fn().mockRejectedValue(new Error("boom")),
     };
     await expect(syncRepo(deps, "repo-a", "2026-06-24T00:00:00.000Z")).rejects.toThrow("boom");
-    expect(getLastSynced(db, "repo-a")).toBeNull();
+    expect(getLastSynced(db, "bitbucket", "repo-a")).toBeNull();
     db.close();
   });
 });

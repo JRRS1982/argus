@@ -78,7 +78,7 @@ describe("Dashboard", () => {
           const insights = {
             leaderboard: [],
             prsCreated: {
-              rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+              rowUsers: [{ personId: 1, displayName: "Ana" }, { personId: 2, displayName: "Ben" }],
               colHeaders: [{ key: "r1", label: "r1" }],
               cells: [[1200], [34]],
               rowTotals: [1200, 34],

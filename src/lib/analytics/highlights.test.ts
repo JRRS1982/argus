@@ -4,13 +4,13 @@ import type { InsightsResponse } from "@/types";
 
 const base: InsightsResponse = {
   leaderboard: [
-    { accountId: "u1", displayName: "Ana", prCount: 3, openPrCount: 0,
+    { personId: 1, displayName: "Ana", prCount: 3, openPrCount: 0,
       averageReviewMs: 9_000_000, medianReviewMs: 7_200_000, prs: [] },
-    { accountId: "u2", displayName: "Ben", prCount: 2, openPrCount: 1,
+    { personId: 2, displayName: "Ben", prCount: 2, openPrCount: 1,
       averageReviewMs: 5_000_000, medianReviewMs: 3_600_000, prs: [] },
   ],
   prsCreated: {
-    rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+    rowUsers: [{ personId: 1, displayName: "Ana" }, { personId: 2, displayName: "Ben" }],
     colHeaders: [{ key: "r1", label: "r1" }, { key: "r2", label: "r2" }],
     cells: [[1, 1], [2, 0]],
     rowTotals: [2, 2],
@@ -18,7 +18,7 @@ const base: InsightsResponse = {
     extraColumn: { label: "Services", values: [2, 1] },
   },
   approvals: {
-    rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+    rowUsers: [{ personId: 1, displayName: "Ana" }, { personId: 2, displayName: "Ben" }],
     colHeaders: [{ key: "u1", label: "Ana" }, { key: "u2", label: "Ben" }],
     cells: [[0, 4], [1, 0]],
     rowTotals: [4, 1],

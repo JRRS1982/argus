@@ -13,33 +13,33 @@ describe("buildDemoDataset", () => {
 
   it("returns five included engineers and five included repos", () => {
     const d = buildDemoDataset(NOW);
-    expect(d.users).toHaveLength(5);
-    expect(d.repos).toHaveLength(5);
-    expect(d.users.every((u) => u.included)).toBe(true);
-    expect(d.repos.every((r) => r.included)).toBe(true);
+    expect(d.people).toHaveLength(5);
+    expect(d.services).toHaveLength(5);
+    expect(d.people.every((u) => u.included)).toBe(true);
+    expect(d.services.every((r) => r.included)).toBe(true);
   });
 
   it("gives every engineer at least one PR", () => {
     const d = buildDemoDataset(NOW);
-    for (const u of d.users) {
-      expect(d.prs.some((p) => p.authorAccountId === u.accountId)).toBe(true);
+    for (const u of d.people) {
+      expect(d.prs.some((p) => p.personId === u.id)).toBe(true);
     }
   });
 
   it("targets each repo's main branch so PRs are in scope", () => {
     const d = buildDemoDataset(NOW);
-    const mainBySlug = new Map(d.repos.map((r) => [r.slug, r.mainBranch]));
+    const mainByRepo = new Map(d.services.flatMap((s) => s.identities.map((i) => [i.repoKey, i.defaultBranch])));
     for (const pr of d.prs) {
-      expect(pr.destinationBranch).toBe(mainBySlug.get(pr.repoSlug));
+      expect(pr.destinationBranch).toBe(mainByRepo.get(pr.repoKey));
     }
   });
 
   it("populates every tab on the 6-month window", () => {
     const d = buildDemoDataset(NOW);
     const since = sixMonthsAgoIso(NOW);
-    const board = computeLeaderboard(d.prs, d.repos, d.users, since);
-    const created = computePrsCreatedMatrix(d.prs, d.repos, d.users, since);
-    const approvals = computeApprovalMatrix(d.prs, d.approvals, d.repos, d.users, since);
+    const board = computeLeaderboard(d.prs, d.services, d.people, since);
+    const created = computePrsCreatedMatrix(d.prs, d.services, d.people, since);
+    const approvals = computeApprovalMatrix(d.prs, d.approvals, d.services, d.people, since);
 
     expect(board.length).toBeGreaterThan(0);
     expect(created.rowTotals.some((n) => n > 0)).toBe(true);
@@ -49,8 +49,8 @@ describe("buildDemoDataset", () => {
   it("has more history than the 6-month window shows, so All time differs", () => {
     const d = buildDemoDataset(NOW);
     const since = sixMonthsAgoIso(NOW);
-    const windowed = computePrsCreatedMatrix(d.prs, d.repos, d.users, since);
-    const all = computePrsCreatedMatrix(d.prs, d.repos, d.users, "1970-01-01T00:00:00.000Z");
+    const windowed = computePrsCreatedMatrix(d.prs, d.services, d.people, since);
+    const all = computePrsCreatedMatrix(d.prs, d.services, d.people, "1970-01-01T00:00:00.000Z");
     const sum = (ns: number[]) => ns.reduce((s, n) => s + n, 0);
     expect(sum(all.rowTotals)).toBeGreaterThan(sum(windowed.rowTotals));
   });
@@ -58,7 +58,7 @@ describe("buildDemoDataset", () => {
   it("includes merged PRs nobody else approved, so that column is non-zero", () => {
     const d = buildDemoDataset(NOW);
     const approvals = computeApprovalMatrix(
-      d.prs, d.approvals, d.repos, d.users, "1970-01-01T00:00:00.000Z",
+      d.prs, d.approvals, d.services, d.people, "1970-01-01T00:00:00.000Z",
     );
     expect(approvals.extraColumn).toBeDefined();
     expect(approvals.extraColumn!.values.some((n) => n > 0)).toBe(true);
@@ -66,16 +66,16 @@ describe("buildDemoDataset", () => {
 
   it("never self-approves", () => {
     const d = buildDemoDataset(NOW);
-    const authorByKey = new Map(d.prs.map((p) => [`${p.repoSlug}#${p.id}`, p.authorAccountId]));
+    const authorByKey = new Map(d.prs.map((p) => [`${p.repoKey}#${p.number}`, p.personId]));
     for (const a of d.approvals) {
-      expect(a.approverAccountId).not.toBe(authorByKey.get(`${a.repoSlug}#${a.prId}`));
+      expect(a.personId).not.toBe(authorByKey.get(`${a.repoKey}#${a.prNumber}`));
     }
   });
 
   it("moves with the reference instant rather than hardcoding dates", () => {
     const later = buildDemoDataset("2027-01-29T12:00:00.000Z");
     const since = sixMonthsAgoIso("2027-01-29T12:00:00.000Z");
-    const board = computeLeaderboard(later.prs, later.repos, later.users, since);
+    const board = computeLeaderboard(later.prs, later.services, later.people, since);
     expect(board.length).toBeGreaterThan(0);
   });
 
@@ -94,7 +94,7 @@ describe("buildDemoDataset", () => {
   it("surfaces at least one open PR on the leaderboard's Open column", () => {
     const d = buildDemoDataset(NOW);
     const since = sixMonthsAgoIso(NOW);
-    const board = computeLeaderboard(d.prs, d.repos, d.users, since);
+    const board = computeLeaderboard(d.prs, d.services, d.people, since);
     expect(board.some((row) => row.openPrCount > 0)).toBe(true);
   });
 });

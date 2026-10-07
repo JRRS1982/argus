@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getUsers, getRepos, getPullRequests, getApprovals, getLastRefreshed } from "@/lib/db/queries";
+import { getPullRequests, getApprovals } from "@/lib/db/queries";
+import { getPeople, getServices, getLastRefreshedByProvider } from "@/lib/db/canonical";
 import { computeLeaderboard } from "@/lib/analytics/leaderboard";
 import { computePrsCreatedMatrix, computeApprovalMatrix } from "@/lib/analytics/matrices";
 import { resolveSinceIso, isInsightsWindow, type InsightsWindow } from "@/lib/window";
@@ -25,14 +26,16 @@ export async function GET(req: NextRequest) {
     // source differs.
     const demo = isDemoRequest(req.nextUrl);
     const generatedAtEarly = new Date().toISOString();
-    const { users, repos, prs, approvals, lastRefreshedAt } = demo
+    const { people, services, prs, approvals, lastRefreshedAt } = demo
       ? { ...buildDemoDataset(generatedAtEarly), lastRefreshedAt: generatedAtEarly }
       : (() => {
           const db = getDb();
           return {
-            users: getUsers(db), repos: getRepos(db),
+            people: getPeople(db), services: getServices(db),
             prs: getPullRequests(db), approvals: getApprovals(db),
-            lastRefreshedAt: getLastRefreshed(db),
+            // One stamp per provider now; the single card shows the first until it is
+            // restyled to show each.
+            lastRefreshedAt: getLastRefreshedByProvider(db)[0]?.lastSyncedOn ?? null,
           };
         })();
 
@@ -44,9 +47,9 @@ export async function GET(req: NextRequest) {
     const sinceIso = resolveSinceIso(window, generatedAt, earliestCreated);
 
     const body: InsightsResponse = {
-      leaderboard: computeLeaderboard(prs, repos, users, sinceIso),
-      prsCreated: computePrsCreatedMatrix(prs, repos, users, sinceIso),
-      approvals: computeApprovalMatrix(prs, approvals, repos, users, sinceIso),
+      leaderboard: computeLeaderboard(prs, services, people, sinceIso),
+      prsCreated: computePrsCreatedMatrix(prs, services, people, sinceIso),
+      approvals: computeApprovalMatrix(prs, approvals, services, people, sinceIso),
       window,
       sinceIso,
       generatedAt,
