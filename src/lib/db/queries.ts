@@ -5,6 +5,11 @@ import type {
 } from "@/types";
 import { upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
 
+// TEMPORARY BRIDGE: the roster route and Team tab still read the legacy users/repos
+// tables, so every write is mirrored into people/services to keep `included` in step.
+// Canonical is the authoritative copy — the analytics read it; the legacy copy exists
+// only for the not-yet-rewired UI. Removed in Task 13, when the roster is rewired onto
+// canonical entities.
 export const upsertUsers = (
   db: Database.Database,
   users: { accountId: string; displayName: string }[],
@@ -14,8 +19,7 @@ export const upsertUsers = (
     `INSERT INTO users (account_id, display_name, included) VALUES (@accountId, @displayName, 0)
      ON CONFLICT(account_id) DO UPDATE SET display_name = excluded.display_name`,
   );
-  // The roster still speaks Bitbucket account ids; mirroring into the canonical tables
-  // keeps what the user ticks and what the analytics read the same thing.
+  // Bridge write: see the TEMPORARY BRIDGE note on upsertUsers.
   const tx = db.transaction((rows: typeof users) => rows.forEach((r) => {
     stmt.run(r);
     upsertPersonIdentity(db, "bitbucket", r.accountId, r.displayName);
@@ -23,6 +27,7 @@ export const upsertUsers = (
   tx(users);
 };
 
+// TEMPORARY BRIDGE — see upsertUsers; removed in Task 13.
 export const upsertRepos = (
   db: Database.Database,
   repos: { slug: string; name: string; projectKey: string | null; mainBranch: string }[],
@@ -43,20 +48,29 @@ export const upsertRepos = (
   tx(repos);
 };
 
+// TEMPORARY BRIDGE — see upsertUsers; removed in Task 13. Both copies change in one
+// transaction so an interrupted write cannot leave them split.
 export const setUserIncluded = (db: Database.Database, accountId: string, included: boolean): void => {
-  db.prepare(`UPDATE users SET included = ? WHERE account_id = ?`).run(included ? 1 : 0, accountId);
-  db.prepare(
-    `UPDATE people SET included = ?
-     WHERE id IN (SELECT person_id FROM person_identities WHERE provider = 'bitbucket' AND account_id = ?)`,
-  ).run(included ? 1 : 0, accountId);
+  const flag = included ? 1 : 0;
+  db.transaction(() => {
+    db.prepare(`UPDATE users SET included = ? WHERE account_id = ?`).run(flag, accountId);
+    db.prepare(
+      `UPDATE people SET included = ?
+       WHERE id IN (SELECT person_id FROM person_identities WHERE provider = 'bitbucket' AND account_id = ?)`,
+    ).run(flag, accountId);
+  })();
 };
 
+// TEMPORARY BRIDGE — see upsertUsers and setUserIncluded; removed in Task 13.
 export const setRepoIncluded = (db: Database.Database, slug: string, included: boolean): void => {
-  db.prepare(`UPDATE repos SET included = ? WHERE slug = ?`).run(included ? 1 : 0, slug);
-  db.prepare(
-    `UPDATE services SET included = ?
-     WHERE id IN (SELECT service_id FROM service_identities WHERE provider = 'bitbucket' AND repo_key = ?)`,
-  ).run(included ? 1 : 0, slug);
+  const flag = included ? 1 : 0;
+  db.transaction(() => {
+    db.prepare(`UPDATE repos SET included = ? WHERE slug = ?`).run(flag, slug);
+    db.prepare(
+      `UPDATE services SET included = ?
+       WHERE id IN (SELECT service_id FROM service_identities WHERE provider = 'bitbucket' AND repo_key = ?)`,
+    ).run(flag, slug);
+  })();
 };
 
 export const upsertPullRequest = (db: Database.Database, pr: PullRequestRecord): void => {

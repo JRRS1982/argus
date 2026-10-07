@@ -7,7 +7,7 @@ import {
   getUsers, getRepos, getPullRequests, getApprovals,
   getLastSynced, setLastSynced,
 } from "@/lib/db/queries";
-import { getLastRefreshedByProvider, upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
+import { getPeople, getServices, getLastRefreshedByProvider, upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
 import type { PullRequestRecord, ApprovalRecord } from "@/types";
 
 const freshDb = () => {
@@ -169,6 +169,59 @@ describe("sync_state", () => {
     setLastSynced(db, "bitbucket", "repo-b", "2026-06-02T00:00:00.000Z");
     setLastSynced(db, "bitbucket", "repo-c", "2026-06-09T00:00:00.000Z"); // excluded, must not count
     expect(lastRefreshed(db)).toBe("2026-06-02T00:00:00.000Z");
+    db.close();
+  });
+});
+
+// The roster tables are mirrored into the canonical ones while the UI still reads the
+// legacy copy. If a writer stopped reaching canonical, a user could tick someone and the
+// tabs (which read canonical) would disagree.
+describe("roster bridge keeps legacy and canonical copies in step", () => {
+  it("upsertUsers adds a new person excluded in both, and a re-upsert resets neither", () => {
+    const db = freshDb();
+    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
+    expect(getUsers(db)[0].included).toBe(false);
+    expect(getPeople(db)[0].included).toBe(false);
+
+    setUserIncluded(db, "u1", true);
+    upsertUsers(db, [{ accountId: "u1", displayName: "Alice Renamed" }]);
+    expect(getUsers(db)[0].included).toBe(true);
+    expect(getPeople(db)).toHaveLength(1);
+    expect(getPeople(db)[0].included).toBe(true);
+    db.close();
+  });
+
+  it("upsertRepos adds a new service excluded in both, and a re-upsert resets neither", () => {
+    const db = freshDb();
+    upsertRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
+    expect(getRepos(db)[0].included).toBe(false);
+    expect(getServices(db)[0].included).toBe(false);
+
+    setRepoIncluded(db, "repo-a", true);
+    upsertRepos(db, [{ slug: "repo-a", name: "Repo A2", projectKey: null, mainBranch: "main" }]);
+    expect(getRepos(db)[0].included).toBe(true);
+    expect(getServices(db)).toHaveLength(1);
+    expect(getServices(db)[0].included).toBe(true);
+    db.close();
+  });
+
+  it("setUserIncluded changes the legacy and canonical row together", () => {
+    const db = freshDb();
+    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
+    setUserIncluded(db, "u1", true);
+    expect([getUsers(db)[0].included, getPeople(db)[0].included]).toEqual([true, true]);
+    setUserIncluded(db, "u1", false);
+    expect([getUsers(db)[0].included, getPeople(db)[0].included]).toEqual([false, false]);
+    db.close();
+  });
+
+  it("setRepoIncluded changes the legacy and canonical row together", () => {
+    const db = freshDb();
+    upsertRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
+    setRepoIncluded(db, "repo-a", true);
+    expect([getRepos(db)[0].included, getServices(db)[0].included]).toEqual([true, true]);
+    setRepoIncluded(db, "repo-a", false);
+    expect([getRepos(db)[0].included, getServices(db)[0].included]).toEqual([false, false]);
     db.close();
   });
 });
