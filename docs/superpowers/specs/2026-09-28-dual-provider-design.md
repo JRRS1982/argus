@@ -1,7 +1,7 @@
 # Dual-provider Argus (Bitbucket + GitHub) — design
 
 **Date:** 2026-09-28
-**Status:** approved for planning
+**Status:** implemented
 **Supersedes:** `2026-07-28-provider-agnostic-argus-design.md`
 
 ## Context

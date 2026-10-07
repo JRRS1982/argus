@@ -2,9 +2,9 @@
 
 **[Live demo → argus-blush-chi.vercel.app](https://argus-blush-chi.vercel.app/)**
 
-A local Next.js dashboard that pulls Bitbucket pull-request data for a team and presents four analytical views: a team roster, a review-time leaderboard, a PRs-created matrix, and an approval matrix. All data is cached in a local SQLite database so subsequent refreshes are incremental.
+A local Next.js dashboard that pulls pull-request data for a team and presents four analytical views: a team roster, a review-time leaderboard, a PRs-created matrix, and an approval matrix. GitHub is fetched live; Bitbucket is a frozen, read-only archive whose cached history still counts in every view. People and repos that exist on both providers are linked into one canonical entry with one continuous history. All data is cached in a local SQLite database so subsequent refreshes are incremental.
 
-The live link above runs with no Bitbucket credentials, so it serves [demo mode](#demo-mode): a seeded fixture of five invented engineers across five invented repositories. Every figure on it is fabricated — no real people, repositories or review times. The analytics computing those figures are the same ones that run against real data.
+The live link above runs with no provider configured, so it serves [demo mode](#demo-mode): a seeded fixture of five invented engineers across five invented repositories. Every figure on it is fabricated — no real people, repositories or review times. The analytics computing those figures are the same ones that run against real data.
 
 ## Screenshots
 
@@ -33,7 +33,8 @@ Who helps whom get work over the line. Read a row as: of this author's PRs, how 
 - **Next.js 16** (App Router) + **TypeScript**
 - **Tailwind CSS v4** for styling
 - **better-sqlite3** for local SQLite cache (`data/argus.sqlite`)
-- **Bitbucket REST API v2** (Basic auth: email + API token)
+- **GitHub** (token) — fetched live
+- **Bitbucket REST API v2** — frozen archive, never fetched again
 
 ## The four tabs
 
@@ -46,11 +47,13 @@ Who helps whom get work over the line. Read a row as: of this author's PRs, how 
 
 ## Metric definitions
 
-- **In-review time**: in practice **created → last touched**. The end of the interval is `updated_on`, because
-  Bitbucket's PR list exposes no merge timestamp — that is the merge for almost all PRs, but drifts later if
-  anyone comments after merging. The start is the draft→ready transition where one was recorded, otherwise the
-  creation time (those PRs are flagged with `*` in the leaderboard). Only a `deep` sync can derive real ready
-  times; a `fast` sync — the default — makes every PR a fallback.
+- **In-review time** is decided per PR. On GitHub it is **created → merged** (or ready → merged), both exact,
+  from `merged_at` and the `ready_for_review` timeline event. On archived Bitbucket PRs it is **created → last
+  touched**: Bitbucket's PR list exposes no merge timestamp, so the end is `updated_on` (the merge for almost
+  all PRs, but later if anyone comments afterwards) and the start is creation time. Rows using a fallback
+  start are flagged `*` in the leaderboard, and its caveat text is derived from the rows on screen. All
+  migrated Bitbucket PRs were cached by fast syncs, so today every row is flagged; the asterisk becomes the
+  exception once a deep GitHub backfill has run.
 - **Scope**: `MERGED` or `OPEN` PRs targeting the repo's main branch, in an included repo, by an included user.
   `DECLINED`/`SUPERSEDED` are excluded as abandoned work. Defined once in `src/lib/analytics/scope.ts` so the
   tabs cannot disagree about which PRs exist.
@@ -66,18 +69,17 @@ Who helps whom get work over the line. Read a row as: of this author's PRs, how 
 cp .env.local.example .env.local
 ```
 
-Open `.env.local` and fill in the three required values:
+Open `.env.local` and fill in the required value (`GITHUB_TOKEN`):
 
 | Variable | Description |
 |----------|-------------|
-| `BITBUCKET_EMAIL` | Your Atlassian account email |
-| `BITBUCKET_API_TOKEN` | API token from https://id.atlassian.com/manage-profile/security/api-tokens |
-| `BITBUCKET_WORKSPACE` | Bitbucket workspace slug (e.g. `mvfglobal`) |
+| `GITHUB_TOKEN` | GitHub token able to read the organisation's repos, PRs and members |
 
-Two optional overrides are also available (see `.env.local.example`):
+Optional overrides (see `.env.local.example`):
 
-- `BITBUCKET_PROJECT_KEY` — limit discovery to a single Bitbucket project
+- `GITHUB_ORG` — GitHub organisation to discover (default: `mvfglobal`)
 - `ARGUS_DB_PATH` — override the SQLite cache location (default: `data/argus.sqlite`)
+- `BITBUCKET_*` — not needed: Bitbucket is never fetched or discovered
 
 ### 2. Install dependencies
 
@@ -93,25 +95,41 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### 4. Discover your workspace
+### 4. Discover your organisation
 
 1. Go to the **Team** tab.
-2. Click **Discover workspace** — Argus queries Bitbucket for all users and repos in your workspace.
-3. Use the checkboxes to include or exclude specific users and repos.
-4. Click **Refresh data** — Argus fetches PR activity for all included users/repos and populates the SQLite cache.
+2. Click **Discover workspace** — Argus queries GitHub for the org's members and repos. Bitbucket is not
+   queried: its repos and people were already migrated into the database. Repos and people with matching names
+   (lower-cased, separators ignored) link to their Bitbucket counterparts automatically; anything else you can
+   merge by hand, e.g. the renamed `benchmarkmeapp` → `benchmarkme`. GitHub members with private org
+   membership are not discoverable; they appear later from PR authorship under their login, flagged as
+   possible duplicates for you to merge.
+3. Use the checkboxes to include or exclude specific people and repos.
+4. Click **Refresh data** — Argus fetches PR activity for included GitHub repos and populates the SQLite cache.
+   GitHub always syncs at full detail (its PR list has no review data), at two requests per PR.
    If a repository can't be read, the refresh finishes the rest and lists what it skipped, with the reason in
-   plain English. A repository Bitbucket says is gone (404) gets a **Remove from roster** button beside it —
+   plain English. A repository whose every copy is gone (404) gets a **Remove from roster** button beside it —
    deleted repos stay ticked otherwise, because Discover only ever adds.
 
-After the first full refresh, subsequent refreshes are incremental (only new activity is fetched). A repo's
-very first refresh only reaches back 6 months, so the **All time** view is incomplete until you click
-**Backfill all history**, which re-fetches every PR the ticked repositories have ever had. The highlights
-strip includes "PRs considered" and "Data refreshed" cards, so you can see the data set grow and how fresh
-it is at a glance.
+After the first full refresh, subsequent refreshes are incremental. A repo's very first refresh only reaches
+back 6 months, so the **All time** view is incomplete until you click **Backfill all history**.
+
+**The first backfill takes two runs.** It costs roughly 6,000 GitHub requests against a 5,000/hour limit. When
+the limit is hit the run stops cleanly, keeps everything that completed, and reports that it stopped early;
+click Backfill again after the limit resets and it finishes. This is expected, not a fault. (One known
+limitation: a single repo whose full fetch exceeds an hour's budget would never complete, because a repo is
+saved only once it has been fully fetched. Not reachable at this data size.)
+
+## Migrating an existing cache
+
+Opening a database from before dual-provider support runs forward-only numbered migrations automatically. A
+verified snapshot is written beside the cache first, and the migration is refused if it can't be; each step runs
+in a transaction and rolls back if the PR or approval row counts change. The original tables are renamed to
+`legacy_*`, never dropped. A database newer than the code refuses to open.
 
 ## Demo mode
 
-No Bitbucket credentials? Argus still runs. With no `BITBUCKET_EMAIL`/`BITBUCKET_API_TOKEN` set, a **Demo data** toggle appears beside the date-range toggle, and it defaults to on — this is what lets the dashboard deploy publicly with nothing to configure. [argus-blush-chi.vercel.app](https://argus-blush-chi.vercel.app/) is exactly that: a Vercel deployment with no environment variables set.
+No credentials? Argus still runs. With no provider configured (no `GITHUB_TOKEN`, no Bitbucket credentials), a **Demo data** toggle appears beside the date-range toggle, and it defaults to on — this is what lets the dashboard deploy publicly with nothing to configure. [argus-blush-chi.vercel.app](https://argus-blush-chi.vercel.app/) is exactly that: a Vercel deployment with no environment variables set.
 
 - Demo mode swaps the data source for a seeded, in-memory fixture of 5 engineers and 5 repos — the same record types the database returns, run through the same analytics functions, so the demo can't drift from real behaviour.
 - It never touches SQLite: nothing is read or written to `data/argus.sqlite`, which is what makes it safe on a read-only filesystem.
@@ -127,8 +145,7 @@ All PR data is stored in `data/argus.sqlite` at the project root. The file is cr
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `BITBUCKET_EMAIL` | Yes | — | Atlassian account email for Basic auth |
-| `BITBUCKET_API_TOKEN` | Yes | — | Atlassian API token |
-| `BITBUCKET_WORKSPACE` | Yes | `mvfglobal` | Bitbucket workspace slug |
-| `BITBUCKET_PROJECT_KEY` | No | (all projects) | Scope discovery to one project key |
+| `GITHUB_TOKEN` | Yes | — | GitHub token (repos, PRs, members) |
+| `GITHUB_ORG` | No | `mvfglobal` | GitHub organisation to discover |
+| `BITBUCKET_EMAIL` / `BITBUCKET_API_TOKEN` / `BITBUCKET_WORKSPACE` / `BITBUCKET_PROJECT_KEY` | No | — | Bitbucket is a read-only archive and is never fetched; these only count toward "a provider is configured" for demo mode |
 | `ARGUS_DB_PATH` | No | `data/argus.sqlite` | Override SQLite cache path |
