@@ -1,9 +1,14 @@
 // src/lib/db/migrations/002-provider-keyed-prs.ts
 import type { Migration } from "./runner";
 
-// The runner's row-count guard reads `pull_requests` before and after. This migration
-// renames the original out of the way and creates a replacement of the same name, so
-// the guard compares like with like and still fires if a row is lost in the copy.
+// The runner's row-count guard reads `pull_requests` and `approvals` before and after,
+// so this migration creates replacements of the same names and the guard compares like
+// with like, still firing if a row is lost in the copy.
+//
+// The originals are renamed to legacy_pull_requests / legacy_approvals and RETAINED
+// deliberately: the cache holds history that may not be re-fetchable, so the pre-migration
+// rows stay on disk. Nothing reads them again. They may be dropped only once dual-provider
+// has run in anger; the doubled storage is accepted because the history may be unrecoverable.
 const migration: Migration = {
   version: 2,
   name: "provider-keyed-prs",

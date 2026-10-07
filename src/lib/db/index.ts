@@ -1,4 +1,6 @@
-// src/lib/db/index.ts — add the snapshot, keep everything else
+// src/lib/db/index.ts
+// Opens the SQLite cache and brings it to the current schema. Because the cache may hold
+// history that cannot be re-fetched, a verified snapshot is taken before any migration runs.
 import Database from "better-sqlite3";
 import { mkdirSync, existsSync, statSync } from "node:fs";
 import { dirname, join, basename } from "node:path";
@@ -31,6 +33,7 @@ const snapshotTo = (dbPath: string) => (label: string): void => {
   console.log(`[argus] pre-migration snapshot written to ${out}`);
 };
 
+// Returns a process-wide singleton DB handle with the schema applied.
 export const getDb = (): Database.Database => {
   if (instance) return instance;
   mkdirSync(dirname(config.dbPath), { recursive: true });

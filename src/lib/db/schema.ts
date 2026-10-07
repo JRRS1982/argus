@@ -1,4 +1,5 @@
-// src/lib/db/schema.ts — replaces the CREATE TABLE IF NOT EXISTS block
+// src/lib/db/schema.ts
+// Schema entry point: delegates to the migration runner, which owns every table definition.
 import type Database from "better-sqlite3";
 import { runMigrations, type Snapshot } from "./migrations/runner";
 import { MIGRATIONS } from "./migrations";

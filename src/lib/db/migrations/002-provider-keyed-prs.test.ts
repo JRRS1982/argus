@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
 import { runMigrations } from "@/lib/db/migrations/runner";
 import { MIGRATIONS } from "@/lib/db/migrations";
+import migration001 from "@/lib/db/migrations/001-canonical-entities";
 
 const legacy = () => {
   const db = new Database(":memory:");
@@ -118,17 +119,60 @@ describe("migration 002 — provider-keyed PRs", () => {
   it("keeps the original rows on disk under legacy_ names", () => {
     const db = legacy();
     db.exec(`INSERT INTO pull_requests VALUES ${pr(1)}`);
+    db.exec(`INSERT INTO approvals VALUES ('repo-a',1,'u1','2026-01-03T00:00:00Z')`);
     runMigrations(db, MIGRATIONS);
     expect(db.prepare(`SELECT COUNT(*) c FROM legacy_pull_requests`).get()).toEqual({ c: 1 });
+    expect(db.prepare(`SELECT title FROM legacy_pull_requests`).get()).toEqual({ title: "PR 1" });
+    expect(db.prepare(`SELECT COUNT(*) c FROM legacy_approvals`).get()).toEqual({ c: 1 });
+    expect(db.prepare(`SELECT approved_on FROM legacy_approvals`).get())
+      .toEqual({ approved_on: "2026-01-03T00:00:00Z" });
     db.close();
   });
 
+  // Idempotency comes from the runner's version gate, not from up() being re-runnable:
+  // up() is not, because its RENAME would fail on a second call.
   it("is idempotent across a second run", () => {
     const db = legacy();
     db.exec(`INSERT INTO pull_requests VALUES ${pr(1)}`);
+    db.exec(`INSERT INTO approvals VALUES ('repo-a',1,'u1','2026-01-03T00:00:00Z')`);
     runMigrations(db, MIGRATIONS);
     runMigrations(db, MIGRATIONS);
+    expect(db.pragma("user_version", { simple: true })).toBe(2);
     expect(db.prepare(`SELECT COUNT(*) c FROM pull_requests`).get()).toEqual({ c: 1 });
+    expect(db.prepare(`SELECT title FROM pull_requests`).get()).toEqual({ title: "PR 1" });
+    expect(db.prepare(`SELECT COUNT(*) c FROM legacy_pull_requests`).get()).toEqual({ c: 1 });
+    expect(db.prepare(`SELECT COUNT(*) c FROM legacy_approvals`).get()).toEqual({ c: 1 });
+    db.close();
+  });
+
+  it("reaches version 2 on an empty database with both rebuilt tables empty", () => {
+    const db = new Database(":memory:");
+    runMigrations(db, MIGRATIONS);
+    expect(db.pragma("user_version", { simple: true })).toBe(2);
+    expect(db.prepare(`SELECT COUNT(*) c FROM pull_requests`).get()).toEqual({ c: 0 });
+    expect(db.prepare(`SELECT COUNT(*) c FROM approvals`).get()).toEqual({ c: 0 });
+    db.close();
+  });
+
+  // End-to-end proof the safety net fires on THIS migration: break identity coverage
+  // after 001 and 002 must roll back entirely rather than silently drop the PR.
+  it("rolls back entirely when identity coverage is broken, losing no rows", () => {
+    const db = legacy();
+    db.exec(`INSERT INTO pull_requests VALUES ${pr(1)}, ${pr(2, "u1")}`);
+    runMigrations(db, [migration001]);
+    expect(db.pragma("user_version", { simple: true })).toBe(1);
+    db.exec(`DELETE FROM person_identities WHERE account_id = 'u1'`);
+
+    expect(() => runMigrations(db, MIGRATIONS)).toThrow(/row count/);
+
+    expect(db.pragma("user_version", { simple: true })).toBe(1);
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'legacy_pull_requests'`).get())
+      .toBeUndefined();
+    const rows = db.prepare(`SELECT repo_slug, id, title FROM pull_requests ORDER BY id`).all();
+    expect(rows).toEqual([
+      { repo_slug: "repo-a", id: 1, title: "PR 1" },
+      { repo_slug: "repo-a", id: 2, title: "PR 2" },
+    ]);
     db.close();
   });
 });
