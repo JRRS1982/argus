@@ -5,7 +5,9 @@ import type {
 } from "@/types";
 import { upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
 
-// Bitbucket Discover writes straight to the canonical tables. The legacy users/repos
+// NOT used by the app: Discover no longer touches Bitbucket (it is a frozen archive that
+// migration 001 already populated). Kept as canonical-only seeding helpers for tests.
+// Previously Bitbucket Discover wrote straight to the canonical tables. The legacy users/repos
 // tables are no longer written or read at runtime: they survive only as the source the
 // canonical-entities migration reads on an older database. New entities arrive excluded;
 // re-running Discover never changes a choice already made.

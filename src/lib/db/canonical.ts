@@ -116,10 +116,13 @@ export const upsertServiceIdentity = (
   const { lastInsertRowid } = db.prepare(
     `INSERT INTO services (name, included) VALUES (?, 0)`,
   ).run(name);
+  // Bitbucket is a frozen archive, so state follows the provider: no caller can mint an
+  // active Bitbucket identity for sync to try (and fail) to fetch.
+  const state = provider === "bitbucket" ? "archived" : "active";
   db.prepare(`
     INSERT INTO service_identities (provider, repo_key, service_id, default_branch, group_key, state)
-    VALUES (?, ?, ?, ?, ?, 'active')
-  `).run(provider, repoKey, lastInsertRowid, defaultBranch, groupKey);
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(provider, repoKey, lastInsertRowid, defaultBranch, groupKey, state);
   return Number(lastInsertRowid);
 };
 
@@ -139,6 +142,10 @@ const relink = (
       `SELECT ${idColumn} AS id FROM ${identityTable} WHERE provider = ? AND ${keyColumn} = ?`,
     ).get(provider, key) as { id: number } | undefined;
     if (!row || row.id === intoId) return;
+    // Nothing is ever un-ticked automatically, so a merge keeps the entity ticked if
+    // either side was.
+    const wasIncluded = db.prepare(`SELECT included FROM ${entityTable} WHERE id = ?`).get(row.id) as { included: number };
+    if (wasIncluded.included) db.prepare(`UPDATE ${entityTable} SET included = 1 WHERE id = ?`).run(intoId);
 
     db.prepare(
       `UPDATE ${identityTable} SET ${idColumn} = ? WHERE provider = ? AND ${keyColumn} = ?`,

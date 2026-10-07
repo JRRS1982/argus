@@ -17,19 +17,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ getDb: () => h.db }));
 vi.mock("@/config", () => ({
-  config: { workspace: "ws", projectKey: null, dbPath: ":memory:", githubToken: "tok", githubOrg: "org" },
+  config: { workspace: "ws", projectKey: null, dbPath: ":memory:", githubToken: "tok" as string | null, githubOrg: "org" },
 }));
-vi.mock("@/lib/bitbucket/client", () => ({ getAuthHeader: () => "Basic x" }));
+// Discover must never touch Bitbucket: any call into these fails the test.
+vi.mock("@/lib/bitbucket/client", () => ({ getAuthHeader: () => { throw new Error("Bitbucket credentials required"); } }));
 vi.mock("@/lib/bitbucket/discover", () => ({
-  fetchWorkspaceMembers: async () => [
-    { accountId: "bb-alice", displayName: "Alice Smith" },
-    { accountId: "bb-bob", displayName: "Bob Jones" },
-  ],
-  fetchRepos: async () => [
-    { slug: "chameleon-gateway", name: "chameleon-gateway", projectKey: "CH", mainBranch: "main" },
-    { slug: "chameleon-qa", name: "chameleon-qa", projectKey: "CH", mainBranch: "main" },
-    { slug: "benchmarkmeapp", name: "benchmarkmeapp", projectKey: "BM", mainBranch: "main" },
-  ],
+  fetchWorkspaceMembers: async () => { throw new Error("Bitbucket must not be discovered"); },
+  fetchRepos: async () => { throw new Error("Bitbucket must not be discovered"); },
 }));
 vi.mock("@/lib/github/adapter", () => ({
   createGitHubProvider: () => ({
@@ -41,6 +35,7 @@ vi.mock("@/lib/github/adapter", () => ({
   }),
 }));
 
+import { config } from "@/config";
 import { POST } from "@/app/api/discover/route";
 
 const call = () => POST(new NextRequest("http://localhost/api/discover", { method: "POST" }));
@@ -125,5 +120,34 @@ describe("POST /api/discover — GitHub auto-linking", () => {
     expect(flagsAfter[0].find(([n]) => n === "chameleon-gateway")![1]).toBe(true);
     expect(flagsAfter[1].find(([n]) => n === "Alice Smith")![1]).toBe(true);
     expect(JSON.parse(before)[0].find(([n]: string[]) => n === "benchmarkme")[1]).toBe(false);
+  });
+});
+
+describe("POST /api/discover — no Bitbucket credentials", () => {
+  beforeEach(() => {
+    h.db = new Database(":memory:");
+    applySchema(h.db);
+    h.ghRepos = [{ repoKey: "only-gh", name: "only-gh", defaultBranch: "main", groupKey: null }];
+    h.ghPeople = [{ accountId: "newbie", displayName: "newbie" }];
+    vi.stubEnv("BITBUCKET_EMAIL", "");
+    vi.stubEnv("BITBUCKET_API_TOKEN", "");
+  });
+
+  it("succeeds and reaches GitHub", async () => {
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(getServices(h.db).map((s) => [s.name, s.included])).toEqual([["only-gh", false]]);
+    expect(getPeople(h.db).map((p) => p.displayName)).toEqual(["newbie"]);
+  });
+
+  it("explains itself when GitHub is not configured either", async () => {
+    (config as { githubToken: string | null }).githubToken = null;
+    try {
+      const res = await call();
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/GITHUB_TOKEN/);
+    } finally {
+      (config as { githubToken: string | null }).githubToken = "tok";
+    }
   });
 });

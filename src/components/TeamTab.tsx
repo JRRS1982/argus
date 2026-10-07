@@ -129,18 +129,18 @@ export default function TeamTab({
     <div className="space-y-6">
       <div className="flex gap-3 items-center">
         <button onClick={() => run("discover")} disabled={busy !== null || demo}
-          title={demo ? "Turn off demo data to talk to Bitbucket" : undefined}
+          title={demo ? "Turn off demo data to use real providers" : undefined}
           className="px-4 py-2 rounded bg-gray-800 text-white disabled:opacity-50">
           {busy === "discover" ? "Discovering…" : "Discover workspace"}
         </button>
         <button onClick={() => run("sync")} disabled={busy !== null || demo}
-          title={demo ? "Turn off demo data to talk to Bitbucket" : undefined}
+          title={demo ? "Turn off demo data to use real providers" : undefined}
           className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">
           {busy === "sync" ? "Refreshing…" : "Refresh data"}
         </button>
         <button onClick={() => run("backfill")} disabled={busy !== null || demo}
           title={demo
-            ? "Turn off demo data to talk to Bitbucket"
+            ? "Turn off demo data to use real providers"
             : "Re-fetch every PR each ticked repo has ever had, not just activity since the last refresh — needed once for All time to be complete"}
           className="px-4 py-2 rounded border border-gray-300 text-gray-700 disabled:opacity-50 hover:bg-gray-50">
           {busy === "backfill" ? "Backfilling…" : "Backfill all history"}

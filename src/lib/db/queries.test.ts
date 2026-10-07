@@ -7,7 +7,7 @@ import {
   getPullRequests, getApprovals,
   getLastSynced, setLastSynced,
 } from "@/lib/db/queries";
-import { getPeople, getServices, setPersonIncluded, setServiceIncluded, getLastRefreshedByProvider, upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
+import { getPeople, getServices, setPersonIncluded, setServiceIncluded, getLastRefreshedByProvider, upsertPersonIdentity, upsertServiceIdentity, linkServiceIdentity, linkPersonIdentity } from "@/lib/db/canonical";
 import type { PullRequestRecord, ApprovalRecord } from "@/types";
 
 const freshDb = () => {
@@ -143,6 +143,46 @@ describe("sync_state", () => {
     setLastSynced(db, "bitbucket", "repo-b", "2026-06-02T00:00:00.000Z");
     setLastSynced(db, "bitbucket", "repo-c", "2026-06-09T00:00:00.000Z"); // excluded, must not count
     expect(lastRefreshed(db)).toBe("2026-06-02T00:00:00.000Z");
+    db.close();
+  });
+});
+describe("upsertServiceIdentity state is provider-derived", () => {
+  it("creates Bitbucket identities archived and GitHub identities active", () => {
+    const db = freshDb();
+    upsertServiceIdentity(db, "bitbucket", "bb", "bb", "main", null);
+    upsertServiceIdentity(db, "github", "gh", "gh", "main", null);
+    const state = (n: string) => getServices(db).find((s) => s.name === n)!.identities[0].state;
+    expect([state("bb"), state("gh")]).toEqual(["archived", "active"]);
+    db.close();
+  });
+});
+
+describe("merging never un-ticks", () => {
+  const setup = (aTicked: boolean, bTicked: boolean) => {
+    const db = freshDb();
+    const a = upsertServiceIdentity(db, "github", "a", "a", "main", null);
+    const b = upsertServiceIdentity(db, "bitbucket", "b", "b", "main", null);
+    setServiceIncluded(db, a, aTicked); setServiceIncluded(db, b, bTicked);
+    const pa = upsertPersonIdentity(db, "github", "a", "a");
+    const pb = upsertPersonIdentity(db, "bitbucket", "b", "b");
+    setPersonIncluded(db, pa, aTicked); setPersonIncluded(db, pb, bTicked);
+    return { db, a, b, pa, pb };
+  };
+  it.each([
+    ["ticked into unticked", true, false],
+    ["unticked into ticked", false, true],
+  ])("keeps the survivor ticked: %s", (_n, aTicked, bTicked) => {
+    const { db, b, pb } = setup(aTicked, bTicked);
+    linkServiceIdentity(db, "github", "a", b);
+    linkPersonIdentity(db, "github", "a", pb);
+    expect(getServices(db).map((s) => s.included)).toEqual([true]);
+    expect(getPeople(db).map((p) => p.included)).toEqual([true]);
+    db.close();
+  });
+  it("leaves two unticked entities unticked", () => {
+    const { db, b } = setup(false, false);
+    linkServiceIdentity(db, "github", "a", b);
+    expect(getServices(db).map((s) => s.included)).toEqual([false]);
     db.close();
   });
 });

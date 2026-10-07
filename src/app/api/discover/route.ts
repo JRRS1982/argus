@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/config";
 import { getDb } from "@/lib/db";
-import { upsertBitbucketUsers, upsertBitbucketRepos } from "@/lib/db/queries";
-import { getAuthHeader } from "@/lib/bitbucket/client";
-import { fetchWorkspaceMembers, fetchRepos } from "@/lib/bitbucket/discover";
 import { isDemoRequest } from "@/lib/demo/request";
 import { createGitHubProvider } from "@/lib/github/adapter";
 import { discoverProvider } from "@/lib/discovery/discover";
@@ -20,20 +17,18 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const auth = getAuthHeader();
-    const [members, repos] = await Promise.all([
-      fetchWorkspaceMembers(config.workspace, auth),
-      fetchRepos(config.workspace, config.projectKey, auth),
-    ]);
+    // Bitbucket is a frozen archive: migration 001 already holds every one of its
+    // repos and people, so re-discovering it can add nothing — and needing Bitbucket
+    // credentials here would fail Discover before GitHub is ever reached.
+    if (!config.githubToken) {
+      return NextResponse.json(
+        { error: "Nothing to discover: set GITHUB_TOKEN. Bitbucket is a read-only archive and is not re-discovered." },
+        { status: 400 },
+      );
+    }
     const db = getDb();
-    upsertBitbucketUsers(db, members);
-    upsertBitbucketRepos(db, repos);
-    // GitHub runs after Bitbucket so its repos and people have existing canonical
-    // entities to link onto. Skipped when no token is configured.
-    const github = config.githubToken
-      ? await discoverProvider(db, createGitHubProvider(config.githubOrg, config.githubToken))
-      : null;
-    return NextResponse.json({ users: members.length, repos: repos.length, github });
+    const github = await discoverProvider(db, createGitHubProvider(config.githubOrg, config.githubToken));
+    return NextResponse.json({ users: github.people, repos: github.repos, github });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
