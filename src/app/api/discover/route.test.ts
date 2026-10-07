@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { NextRequest } from "next/server";
 import { applySchema } from "@/lib/db/schema";
-import { upsertUsers, upsertRepos } from "@/lib/db/queries";
+import { upsertBitbucketUsers, upsertBitbucketRepos } from "@/lib/db/queries";
 import { getPeople, getServices, setServiceIncluded, setPersonIncluded } from "@/lib/db/canonical";
 
 const h = vi.hoisted(() => ({
@@ -51,11 +51,11 @@ describe("POST /api/discover — GitHub auto-linking", () => {
     h.db = new Database(":memory:");
     applySchema(h.db);
     // The Bitbucket-era roster, with a ticked choice for each kind of entity.
-    upsertUsers(h.db, [
+    upsertBitbucketUsers(h.db, [
       { accountId: "bb-alice", displayName: "Alice Smith" },
       { accountId: "bb-bob", displayName: "Bob Jones" },
     ]);
-    upsertRepos(h.db, [
+    upsertBitbucketRepos(h.db, [
       { slug: "chameleon-gateway", name: "chameleon-gateway", projectKey: "CH", mainBranch: "main" },
       { slug: "chameleon-qa", name: "chameleon-qa", projectKey: "CH", mainBranch: "main" },
       { slug: "benchmarkmeapp", name: "benchmarkmeapp", projectKey: "BM", mainBranch: "main" },

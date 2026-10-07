@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/config";
 import { getDb } from "@/lib/db";
-import { upsertUsers, upsertRepos } from "@/lib/db/queries";
+import { upsertBitbucketUsers, upsertBitbucketRepos } from "@/lib/db/queries";
 import { getAuthHeader } from "@/lib/bitbucket/client";
 import { fetchWorkspaceMembers, fetchRepos } from "@/lib/bitbucket/discover";
 import { isDemoRequest } from "@/lib/demo/request";
@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
       fetchRepos(config.workspace, config.projectKey, auth),
     ]);
     const db = getDb();
-    upsertUsers(db, members);
-    upsertRepos(db, repos);
+    upsertBitbucketUsers(db, members);
+    upsertBitbucketRepos(db, repos);
     // GitHub runs after Bitbucket so its repos and people have existing canonical
     // entities to link onto. Skipped when no token is configured.
     const github = config.githubToken

@@ -13,7 +13,7 @@ afterEach(() => {
 // Regression coverage for CRITICAL 1: a non-ok response from /api/insights or
 // /api/roster still resolves its body to JSON (an `{ error }` object), which used to
 // get stored as if it were real data and then crash the first thing that read a
-// field off it (formatWindowLabel, computeHighlights, roster.users.map). The fix
+// field off it (formatWindowLabel, computeHighlights, roster.people.map). The fix
 // gates both fetches on `r.ok` before touching state at all.
 describe("Dashboard", () => {
   it("survives a failed /api/insights fetch (e.g. demo-off hitting a read-only filesystem) without crashing", async () => {
@@ -28,7 +28,7 @@ describe("Dashboard", () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ users: [], repos: [] }),
+          json: () => Promise.resolve({ people: [], services: [] }),
         } as Response);
       }),
     );
@@ -60,7 +60,7 @@ describe("Dashboard", () => {
           };
           return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
@@ -90,7 +90,7 @@ describe("Dashboard", () => {
           };
           return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
@@ -126,7 +126,7 @@ describe("Dashboard", () => {
 
     await waitFor(() => expect(rosterCalls).toBeGreaterThan(0));
 
-    // roster.users stayed an array ([], the initial state) rather than becoming
+    // roster.people stayed an array ([], the initial state) rather than becoming
     // `{ error: "boom" }`, which would have thrown inside TeamTab's `.map`.
     expect(screen.getByText("No users yet — run Discover.")).toBeTruthy();
   });

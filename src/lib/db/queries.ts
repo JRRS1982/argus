@@ -1,76 +1,27 @@
 import type Database from "better-sqlite3";
 import type {
-  PullRequestRecord, ApprovalRecord, UserRecord, RepoRecord, PullRequestState,
+  PullRequestRecord, ApprovalRecord, PullRequestState,
   ProviderId, Precision,
 } from "@/types";
 import { upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
 
-// TEMPORARY BRIDGE: the roster route and Team tab still read the legacy users/repos
-// tables, so every write is mirrored into people/services to keep `included` in step.
-// Canonical is the authoritative copy — the analytics read it; the legacy copy exists
-// only for the not-yet-rewired UI. Removed in Task 13, when the roster is rewired onto
-// canonical entities.
-export const upsertUsers = (
+// Bitbucket Discover writes straight to the canonical tables. The legacy users/repos
+// tables are no longer written or read at runtime: they survive only as the source the
+// canonical-entities migration reads on an older database. New entities arrive excluded;
+// re-running Discover never changes a choice already made.
+export const upsertBitbucketUsers = (
   db: Database.Database,
   users: { accountId: string; displayName: string }[],
 ): void => {
-  const stmt = db.prepare(
-    // New users arrive excluded; re-running Discover never changes an existing choice.
-    `INSERT INTO users (account_id, display_name, included) VALUES (@accountId, @displayName, 0)
-     ON CONFLICT(account_id) DO UPDATE SET display_name = excluded.display_name`,
-  );
-  // Bridge write: see the TEMPORARY BRIDGE note on upsertUsers.
-  const tx = db.transaction((rows: typeof users) => rows.forEach((r) => {
-    stmt.run(r);
-    upsertPersonIdentity(db, "bitbucket", r.accountId, r.displayName);
-  }));
-  tx(users);
+  db.transaction(() => users.forEach((u) => upsertPersonIdentity(db, "bitbucket", u.accountId, u.displayName)))();
 };
 
-// TEMPORARY BRIDGE — see upsertUsers; removed in Task 13.
-export const upsertRepos = (
+export const upsertBitbucketRepos = (
   db: Database.Database,
   repos: { slug: string; name: string; projectKey: string | null; mainBranch: string }[],
 ): void => {
-  const stmt = db.prepare(
-    // New repos arrive excluded — see users above.
-    `INSERT INTO repos (slug, name, project_key, main_branch, included)
-     VALUES (@slug, @name, @projectKey, @mainBranch, 0)
-     ON CONFLICT(slug) DO UPDATE SET
-       name = excluded.name,
-       project_key = excluded.project_key,
-       main_branch = excluded.main_branch`,
-  );
-  const tx = db.transaction((rows: typeof repos) => rows.forEach((r) => {
-    stmt.run(r);
-    upsertServiceIdentity(db, "bitbucket", r.slug, r.name, r.mainBranch, r.projectKey);
-  }));
-  tx(repos);
-};
-
-// TEMPORARY BRIDGE — see upsertUsers; removed in Task 13. Both copies change in one
-// transaction so an interrupted write cannot leave them split.
-export const setUserIncluded = (db: Database.Database, accountId: string, included: boolean): void => {
-  const flag = included ? 1 : 0;
-  db.transaction(() => {
-    db.prepare(`UPDATE users SET included = ? WHERE account_id = ?`).run(flag, accountId);
-    db.prepare(
-      `UPDATE people SET included = ?
-       WHERE id IN (SELECT person_id FROM person_identities WHERE provider = 'bitbucket' AND account_id = ?)`,
-    ).run(flag, accountId);
-  })();
-};
-
-// TEMPORARY BRIDGE — see upsertUsers and setUserIncluded; removed in Task 13.
-export const setRepoIncluded = (db: Database.Database, slug: string, included: boolean): void => {
-  const flag = included ? 1 : 0;
-  db.transaction(() => {
-    db.prepare(`UPDATE repos SET included = ? WHERE slug = ?`).run(flag, slug);
-    db.prepare(
-      `UPDATE services SET included = ?
-       WHERE id IN (SELECT service_id FROM service_identities WHERE provider = 'bitbucket' AND repo_key = ?)`,
-    ).run(flag, slug);
-  })();
+  db.transaction(() => repos.forEach((r) =>
+    upsertServiceIdentity(db, "bitbucket", r.slug, r.name, r.mainBranch, r.projectKey)))();
 };
 
 export const upsertPullRequest = (db: Database.Database, pr: PullRequestRecord): void => {
@@ -136,18 +87,6 @@ export const replaceApprovals = (
   });
   tx();
 };
-
-type UserRow = { account_id: string; display_name: string; included: number };
-export const getUsers = (db: Database.Database): UserRecord[] =>
-  // COLLATE NOCASE: SQLite's default collation sorts all uppercase before lowercase,
-  // which scatters names like "carolyn.symonds" below every capitalised name.
-  (db.prepare(`SELECT account_id, display_name, included FROM users ORDER BY display_name COLLATE NOCASE`).all() as UserRow[])
-    .map((r) => ({ accountId: r.account_id, displayName: r.display_name, included: !!r.included }));
-
-type RepoRow = { slug: string; name: string; project_key: string | null; main_branch: string; included: number };
-export const getRepos = (db: Database.Database): RepoRecord[] =>
-  (db.prepare(`SELECT slug, name, project_key, main_branch, included FROM repos ORDER BY name COLLATE NOCASE`).all() as RepoRow[])
-    .map((r) => ({ slug: r.slug, name: r.name, projectKey: r.project_key, mainBranch: r.main_branch, included: !!r.included }));
 
 type PrRow = {
   provider: string; repo_key: string; number: number; service_id: number; person_id: number;

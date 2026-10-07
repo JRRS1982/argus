@@ -2,6 +2,20 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import TeamTab from "@/components/TeamTab";
+import type { Person, Service } from "@/types";
+
+const svc = (over: Partial<Service> = {}): Service => ({
+  id: 1, name: "Repo A", included: true,
+  identities: [{
+    provider: "github", repoKey: "repo-a", defaultBranch: "main",
+    groupKey: null, state: "active", lastSyncedOn: null,
+  }],
+  ...over,
+});
+const person = (over: Partial<Person> = {}): Person => ({
+  id: 1, displayName: "Alice", included: true,
+  identities: [{ provider: "bitbucket", accountId: "u1" }], ...over,
+});
 
 afterEach(() => {
   cleanup();
@@ -15,8 +29,8 @@ describe("TeamTab", () => {
   // overwritten with something that isn't `{ users, repos }`.
   it("does not call onRosterChange when the post-discover roster reload fails", async () => {
     const existingRoster = {
-      users: [{ accountId: "u1", displayName: "Alice", included: true }],
-      repos: [],
+      people: [{ id: 1, displayName: "Alice", included: true, identities: [{ provider: "bitbucket" as const, accountId: "u1" }] }],
+      services: [],
     };
     const onRosterChange = vi.fn();
 
@@ -68,7 +82,7 @@ describe("TeamTab", () => {
       }),
     );
 
-    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    render(<TeamTab roster={{ people: [], services: [] }} onRosterChange={vi.fn()} demo={false} />);
     fireEvent.click(screen.getByRole("button", { name: "Backfill all history" }));
 
     await waitFor(() => {
@@ -95,15 +109,21 @@ describe("TeamTab skipped repositories", () => {
             { provider: "bitbucket", repoKey: "phobos", reason: "Bitbucket is unavailable (503) — try again shortly.", status: 503, missing: false },
           ]));
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
-    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    const idn = (repoKey: string, state: "missing" | "active") => ({
+      provider: "bitbucket" as const, repoKey, defaultBranch: "main", groupKey: null, state, lastSyncedOn: null,
+    });
+    render(<TeamTab roster={{ people: [], services: [
+      svc({ id: 1, name: "benchmarkme", identities: [idn("benchmarkme", "missing")] }),
+      svc({ id: 2, name: "phobos", identities: [idn("phobos", "active")] }),
+    ] }} onRosterChange={vi.fn()} demo={false} />);
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/benchmarkme/)).toBeTruthy();
+      expect(screen.getByText(/no longer exists in this workspace/)).toBeTruthy();
     });
     expect(screen.getByText(/no longer exists in this workspace/)).toBeTruthy();
     expect(screen.getByText(/Bitbucket is unavailable/)).toBeTruthy();
@@ -123,11 +143,14 @@ describe("TeamTab skipped repositories", () => {
             { provider: "bitbucket", repoKey: "benchmarkme", reason: "Not found (404).", status: 404, missing: true },
           ]));
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
-    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    const gone = svc({ id: 9, name: "benchmarkme", identities: [{
+      provider: "bitbucket", repoKey: "benchmarkme", defaultBranch: "main", groupKey: null, state: "missing", lastSyncedOn: null,
+    }] });
+    render(<TeamTab roster={{ people: [], services: [gone] }} onRosterChange={vi.fn()} demo={false} />);
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
     await waitFor(() => expect(screen.getByRole("button", { name: /Remove from roster/ })).toBeTruthy());
 
@@ -137,7 +160,7 @@ describe("TeamTab skipped repositories", () => {
       expect(screen.queryByRole("button", { name: /Remove from roster/ })).toBeNull();
     });
     const patch = calls.find((c) => c.init?.method === "PATCH");
-    expect(JSON.parse(patch!.init!.body as string)).toEqual({ kind: "repo", id: "benchmarkme", included: false });
+    expect(JSON.parse(patch!.init!.body as string)).toEqual({ kind: "service", id: 9, included: false });
   });
 });
 
@@ -160,16 +183,148 @@ describe("TeamTab wholesale sync failure", () => {
             }),
           } as Response);
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
-    render(<TeamTab roster={{ users: [], repos: [] }} onRosterChange={vi.fn()} demo={false} />);
+    render(<TeamTab roster={{ people: [], services: [] }} onRosterChange={vi.fn()} demo={false} />);
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
 
     await waitFor(() => expect(screen.getByText(/None of the 3 selected repositories/)).toBeTruthy());
     expect(screen.getByText(/3 repositories were skipped/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Remove from roster/ })).toBeNull();
     expect(screen.getByText(/more likely one fault/)).toBeTruthy();
+  });
+});
+
+const ident = (provider: "bitbucket" | "github", repoKey: string, state: "active" | "archived" | "missing") =>
+  ({ provider, repoKey, defaultBranch: "main", groupKey: null, state, lastSyncedOn: null });
+
+describe("TeamTab roster ordering and badges", () => {
+  it("lists included services above excluded ones, alphabetical within each group", () => {
+    render(<TeamTab roster={{ people: [], services: [
+      svc({ id: 1, name: "zebra", included: true }),
+      svc({ id: 2, name: "alpha", included: false }),
+      svc({ id: 3, name: "beta", included: true }),
+    ] }} />);
+    // With 768 discovered services an unordered list is unusable: what you have
+    // chosen must be visible without scrolling past hundreds you have not.
+    expect(screen.getAllByRole("checkbox").map((c) => c.getAttribute("aria-label")))
+      .toEqual(["beta", "zebra", "alpha"]);
+  });
+
+  it("orders people the same way, case-insensitively", () => {
+    render(<TeamTab roster={{ services: [], people: [
+      person({ id: 1, displayName: "Zoe", included: false }),
+      person({ id: 2, displayName: "bob", included: true }),
+      person({ id: 3, displayName: "Andy", included: true }),
+      person({ id: 4, displayName: "carol", included: false }),
+    ] }} />);
+    expect(screen.getAllByRole("checkbox").map((c) => c.getAttribute("aria-label")))
+      .toEqual(["Andy", "bob", "carol", "Zoe"]);
+  });
+
+  it("shows a badge per provider identity", () => {
+    render(<TeamTab roster={{ people: [], services: [svc({
+      identities: [ident("bitbucket", "repo-a", "archived"), ident("github", "repo-a", "active")],
+    })] }} />);
+    expect(screen.getByTitle(/Bitbucket.*archived/i)).toBeTruthy();
+    expect(screen.getByTitle(/GitHub.*active/i)).toBeTruthy();
+  });
+});
+
+describe("TeamTab removal safety", () => {
+  const skip = (provider: "bitbucket" | "github", repoKey: string) =>
+    ({ provider, repoKey, reason: "Not found (404).", status: 404, missing: true });
+
+  // Archived Bitbucket history is irreplaceable and cannot be re-fetched.
+  it("does not offer removal for a service whose only identity is archived", () => {
+    render(<TeamTab anyRepoSucceeded skipped={[skip("github", "repo-a")]}
+      roster={{ people: [], services: [svc({ identities: [ident("bitbucket", "repo-a", "archived")] })] }} />);
+    expect(screen.queryByRole("button", { name: /remove from roster/i })).toBeNull();
+  });
+
+  it("does not offer removal when a missing GitHub identity sits beside archived Bitbucket history", () => {
+    render(<TeamTab anyRepoSucceeded skipped={[skip("github", "repo-a")]}
+      roster={{ people: [], services: [svc({
+        identities: [ident("bitbucket", "repo-a", "archived"), ident("github", "repo-a", "missing")],
+      })] }} />);
+    expect(screen.queryByRole("button", { name: /remove from roster/i })).toBeNull();
+  });
+
+  it("removes a GitHub-only service by canonical id", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
+    }));
+    render(<TeamTab anyRepoSucceeded skipped={[skip("github", "repo-a")]}
+      roster={{ people: [], services: [svc({ id: 42, identities: [ident("github", "repo-a", "missing")] })] }} />);
+    fireEvent.click(screen.getByRole("button", { name: /remove from roster/i }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /remove from roster/i })).toBeNull());
+    expect(JSON.parse(calls.find((c) => c.init?.method === "PATCH")!.init!.body as string))
+      .toEqual({ kind: "service", id: 42, included: false });
+  });
+});
+
+describe("TeamTab merge control and hints", () => {
+  const okFetch = () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
+    }));
+    return calls;
+  };
+
+  it("merges an unlinked identity into another entry by canonical id", async () => {
+    const calls = okFetch();
+    render(<TeamTab roster={{ people: [], services: [
+      svc({ id: 1, name: "benchmarkme", identities: [ident("bitbucket", "benchmarkme", "archived")] }),
+      svc({ id: 2, name: "benchmarkmeapp", identities: [ident("github", "benchmarkmeapp", "active")] }),
+    ] }} />);
+    // Two "same as…" buttons; the second row sorted is benchmarkmeapp.
+    fireEvent.click(screen.getAllByRole("button", { name: "same as…" })[1]);
+    fireEvent.change(screen.getByLabelText("Merge benchmarkmeapp into"), { target: { value: "1" } });
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "PATCH")).toBe(true));
+    expect(JSON.parse(calls.find((c) => c.init?.method === "PATCH")!.init!.body as string))
+      .toEqual({ kind: "service", action: "merge", provider: "github", key: "benchmarkmeapp", intoId: 1 });
+  });
+
+  it("offers a split on a linked entry, which reverses the merge", async () => {
+    const calls = okFetch();
+    render(<TeamTab roster={{ people: [], services: [svc({
+      identities: [ident("bitbucket", "repo-a", "archived"), ident("github", "repo-a", "active")],
+    })] }} />);
+    fireEvent.click(screen.getByRole("button", { name: /split GitHub/ }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "PATCH")).toBe(true));
+    expect(JSON.parse(calls.find((c) => c.init?.method === "PATCH")!.init!.body as string))
+      .toEqual({ kind: "service", action: "split", provider: "github", key: "repo-a" });
+  });
+
+  it("flags people whose display name equals their login as possible duplicates", () => {
+    render(<TeamTab roster={{ services: [], people: [
+      person({ id: 1, displayName: "Alice Smith" }),
+      person({ id: 2, displayName: "newbie", identities: [{ provider: "github", accountId: "newbie" }] }),
+    ] }} />);
+    expect(screen.getByText(/Possible duplicates: 1 person/)).toBeTruthy();
+    expect(screen.getAllByText("possible duplicate")).toHaveLength(1);
+  });
+
+  it("says so when a ticked service's provider has no credentials", () => {
+    render(<TeamTab roster={{ people: [], services: [svc()], unconfiguredProviders: ["github"] }} />);
+    expect(screen.getByText(/no GitHub credentials are configured \(GITHUB_TOKEN\)/)).toBeTruthy();
+  });
+
+  it("tells the user to run it again after a rate-limited run", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(url === "/api/sync"
+        ? { totalPrs: 10, repos: [{}], skipped: [], stoppedEarly: { reason: "GitHub rate limit reached." } }
+        : { people: [], services: [] }),
+    } as Response)));
+    render(<TeamTab roster={{ people: [], services: [] }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+    await waitFor(() => expect(screen.getByText(/Stopped early — GitHub rate limit reached\. Everything that finished is saved; run it again to continue\./)).toBeTruthy());
   });
 });

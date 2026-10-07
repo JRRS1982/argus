@@ -178,6 +178,35 @@ export const linkServiceIdentity = (
   db: Database.Database, provider: ProviderId, repoKey: string, intoServiceId: number,
 ): void => relink(db, "service_identities", "repo_key", "service_id", "services", provider, repoKey, intoServiceId);
 
+// The reverse of a merge: gives one identity of a multi-identity entity an entity of its
+// own again, excluded like any new arrival and named by the provider's own key. A no-op
+// for an identity that already stands alone, so a double click cannot mint a duplicate.
+export const splitPersonIdentity = (db: Database.Database, provider: ProviderId, accountId: string): void => {
+  db.transaction(() => {
+    const row = db.prepare(
+      `SELECT person_id AS id FROM person_identities WHERE provider = ? AND account_id = ?`,
+    ).get(provider, accountId) as { id: number } | undefined;
+    if (!row) return;
+    const siblings = db.prepare(`SELECT COUNT(*) AS c FROM person_identities WHERE person_id = ?`).get(row.id) as { c: number };
+    if (siblings.c < 2) return;
+    const { lastInsertRowid } = db.prepare(`INSERT INTO people (display_name, included) VALUES (?, 0)`).run(accountId);
+    linkPersonIdentity(db, provider, accountId, Number(lastInsertRowid));
+  })();
+};
+
+export const splitServiceIdentity = (db: Database.Database, provider: ProviderId, repoKey: string): void => {
+  db.transaction(() => {
+    const row = db.prepare(
+      `SELECT service_id AS id FROM service_identities WHERE provider = ? AND repo_key = ?`,
+    ).get(provider, repoKey) as { id: number } | undefined;
+    if (!row) return;
+    const siblings = db.prepare(`SELECT COUNT(*) AS c FROM service_identities WHERE service_id = ?`).get(row.id) as { c: number };
+    if (siblings.c < 2) return;
+    const { lastInsertRowid } = db.prepare(`INSERT INTO services (name, included) VALUES (?, 0)`).run(repoKey);
+    linkServiceIdentity(db, provider, repoKey, Number(lastInsertRowid));
+  })();
+};
+
 export const setServiceIdentityState = (
   db: Database.Database, provider: ProviderId, repoKey: string, state: IdentityState,
 ): void => {

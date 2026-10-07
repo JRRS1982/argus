@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import Database from "better-sqlite3";
 import { applySchema } from "@/lib/db/schema";
 import {
-  upsertUsers, upsertRepos, setUserIncluded, setRepoIncluded,
+  upsertBitbucketUsers, upsertBitbucketRepos,
   upsertPullRequest, replaceApprovals,
-  getUsers, getRepos, getPullRequests, getApprovals,
+  getPullRequests, getApprovals,
   getLastSynced, setLastSynced,
 } from "@/lib/db/queries";
-import { getPeople, getServices, getLastRefreshedByProvider, upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
+import { getPeople, getServices, setPersonIncluded, setServiceIncluded, getLastRefreshedByProvider, upsertPersonIdentity, upsertServiceIdentity } from "@/lib/db/canonical";
 import type { PullRequestRecord, ApprovalRecord } from "@/types";
 
 const freshDb = () => {
@@ -45,62 +45,37 @@ describe("applySchema", () => {
   });
 });
 
-describe("user/repo upserts preserve include flags", () => {
-  it("does not reset included on re-upsert", () => {
-    const db = freshDb();
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
-    setUserIncluded(db, "u1", false);
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice Renamed" }]);
-    const [u] = getUsers(db);
-    expect(u.included).toBe(false);
-    expect(u.displayName).toBe("Alice Renamed");
-    db.close();
-  });
-});
-
 describe("discovery defaults", () => {
   it("adds newly discovered users and repos as excluded, so a first run selects nothing", () => {
     const db = freshDb();
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
-    upsertRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
-    expect(getUsers(db)[0].included).toBe(false);
-    expect(getRepos(db)[0].included).toBe(false);
+    upsertBitbucketUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
+    upsertBitbucketRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
+    expect(getPeople(db)[0].included).toBe(false);
+    expect(getServices(db)[0].included).toBe(false);
     db.close();
   });
 
-  it("keeps an explicit inclusion when Discover runs again", () => {
+  it("keeps an explicit inclusion and never resets it when Discover runs again", () => {
     const db = freshDb();
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
-    setUserIncluded(db, "u1", true);
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice Renamed" }]);
-    expect(getUsers(db)[0].included).toBe(true);
-    db.close();
-  });
-});
-
-describe("roster ordering", () => {
-  it("returns users alphabetically regardless of case", () => {
-    const db = freshDb();
-    upsertUsers(db, [
-      { accountId: "u1", displayName: "Zoe Adams" },
-      { accountId: "u2", displayName: "carolyn.symonds" },
-      { accountId: "u3", displayName: "Andrew Shepherd" },
-      { accountId: "u4", displayName: "bob.jones" },
-    ]);
-    expect(getUsers(db).map((u) => u.displayName))
-      .toEqual(["Andrew Shepherd", "bob.jones", "carolyn.symonds", "Zoe Adams"]);
+    upsertBitbucketUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
+    upsertBitbucketRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
+    setPersonIncluded(db, getPeople(db)[0].id, true);
+    setServiceIncluded(db, getServices(db)[0].id, true);
+    upsertBitbucketUsers(db, [{ accountId: "u1", displayName: "Alice Renamed" }]);
+    upsertBitbucketRepos(db, [{ slug: "repo-a", name: "Repo A2", projectKey: null, mainBranch: "main" }]);
+    expect(getPeople(db)).toHaveLength(1);
+    expect(getServices(db)).toHaveLength(1);
+    expect(getPeople(db)[0]).toMatchObject({ included: true, displayName: "Alice Renamed" });
+    expect(getServices(db)[0].included).toBe(true);
     db.close();
   });
 
-  it("returns repos alphabetically regardless of case", () => {
+  it("does not write the legacy users/repos tables any more", () => {
     const db = freshDb();
-    upsertRepos(db, [
-      { slug: "zeus", name: "zeus", projectKey: null, mainBranch: "main" },
-      { slug: "artemis", name: "Artemis", projectKey: null, mainBranch: "main" },
-      { slug: "phobos", name: "phobos", projectKey: null, mainBranch: "main" },
-      { slug: "deimos", name: "Deimos", projectKey: null, mainBranch: "main" },
-    ]);
-    expect(getRepos(db).map((r) => r.name)).toEqual(["Artemis", "Deimos", "phobos", "zeus"]);
+    upsertBitbucketUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
+    upsertBitbucketRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM users`).get() as { c: number }).c).toBe(0);
+    expect((db.prepare(`SELECT COUNT(*) AS c FROM repos`).get() as { c: number }).c).toBe(0);
     db.close();
   });
 });
@@ -156,72 +131,18 @@ describe("sync_state", () => {
 
   it("reports the newest sync stamp among included repos, or null before any sync", () => {
     const db = freshDb();
-    upsertRepos(db, [
+    upsertBitbucketRepos(db, [
       { slug: "repo-a", name: "A", projectKey: null, mainBranch: "main" },
       { slug: "repo-b", name: "B", projectKey: null, mainBranch: "main" },
       { slug: "repo-c", name: "C", projectKey: null, mainBranch: "main" },
     ]);
-    setRepoIncluded(db, "repo-a", true);
-    setRepoIncluded(db, "repo-b", true);
+    getServices(db).filter((s) => s.name !== "C").forEach((s) => setServiceIncluded(db, s.id, true));
     expect(lastRefreshed(db)).toBeNull();
 
     setLastSynced(db, "bitbucket", "repo-a", "2026-06-01T00:00:00.000Z");
     setLastSynced(db, "bitbucket", "repo-b", "2026-06-02T00:00:00.000Z");
     setLastSynced(db, "bitbucket", "repo-c", "2026-06-09T00:00:00.000Z"); // excluded, must not count
     expect(lastRefreshed(db)).toBe("2026-06-02T00:00:00.000Z");
-    db.close();
-  });
-});
-
-// The roster tables are mirrored into the canonical ones while the UI still reads the
-// legacy copy. If a writer stopped reaching canonical, a user could tick someone and the
-// tabs (which read canonical) would disagree.
-describe("roster bridge keeps legacy and canonical copies in step", () => {
-  it("upsertUsers adds a new person excluded in both, and a re-upsert resets neither", () => {
-    const db = freshDb();
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
-    expect(getUsers(db)[0].included).toBe(false);
-    expect(getPeople(db)[0].included).toBe(false);
-
-    setUserIncluded(db, "u1", true);
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice Renamed" }]);
-    expect(getUsers(db)[0].included).toBe(true);
-    expect(getPeople(db)).toHaveLength(1);
-    expect(getPeople(db)[0].included).toBe(true);
-    db.close();
-  });
-
-  it("upsertRepos adds a new service excluded in both, and a re-upsert resets neither", () => {
-    const db = freshDb();
-    upsertRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
-    expect(getRepos(db)[0].included).toBe(false);
-    expect(getServices(db)[0].included).toBe(false);
-
-    setRepoIncluded(db, "repo-a", true);
-    upsertRepos(db, [{ slug: "repo-a", name: "Repo A2", projectKey: null, mainBranch: "main" }]);
-    expect(getRepos(db)[0].included).toBe(true);
-    expect(getServices(db)).toHaveLength(1);
-    expect(getServices(db)[0].included).toBe(true);
-    db.close();
-  });
-
-  it("setUserIncluded changes the legacy and canonical row together", () => {
-    const db = freshDb();
-    upsertUsers(db, [{ accountId: "u1", displayName: "Alice" }]);
-    setUserIncluded(db, "u1", true);
-    expect([getUsers(db)[0].included, getPeople(db)[0].included]).toEqual([true, true]);
-    setUserIncluded(db, "u1", false);
-    expect([getUsers(db)[0].included, getPeople(db)[0].included]).toEqual([false, false]);
-    db.close();
-  });
-
-  it("setRepoIncluded changes the legacy and canonical row together", () => {
-    const db = freshDb();
-    upsertRepos(db, [{ slug: "repo-a", name: "Repo A", projectKey: null, mainBranch: "main" }]);
-    setRepoIncluded(db, "repo-a", true);
-    expect([getRepos(db)[0].included, getServices(db)[0].included]).toEqual([true, true]);
-    setRepoIncluded(db, "repo-a", false);
-    expect([getRepos(db)[0].included, getServices(db)[0].included]).toEqual([false, false]);
     db.close();
   });
 });

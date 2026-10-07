@@ -43,20 +43,6 @@ export type SkippedRepo = {
   missing: boolean;
 };
 
-export type UserRecord = {
-  accountId: string;
-  displayName: string;
-  included: boolean;
-};
-
-export type RepoRecord = {
-  slug: string;
-  name: string;
-  projectKey: string | null;
-  mainBranch: string;
-  included: boolean;
-};
-
 // ── View models ──────────────────────────────────────────────────────
 
 export type LeaderboardPR = {
