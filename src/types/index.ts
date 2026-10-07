@@ -91,3 +91,16 @@ export type InsightsResponse = {
   // this is simply generatedAt.
   lastRefreshedAt: string | null;
 };
+
+export type Precision = "exact" | "derived" | "fallback";
+export type ProviderId = "bitbucket" | "github";
+export type IdentityState = "active" | "archived" | "missing";
+
+export type PersonIdentity = { provider: ProviderId; accountId: string };
+export type Person = { id: number; displayName: string; included: boolean; identities: PersonIdentity[] };
+
+export type ServiceIdentity = {
+  provider: ProviderId; repoKey: string; defaultBranch: string;
+  groupKey: string | null; state: IdentityState; lastSyncedOn: string | null;
+};
+export type Service = { id: number; name: string; included: boolean; identities: ServiceIdentity[] };
