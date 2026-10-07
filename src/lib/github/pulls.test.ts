@@ -41,6 +41,15 @@ describe("mapPullRequest", () => {
   });
 });
 
+describe("mapPullRequest authorship", () => {
+  it("maps a deleted author (user: null) to GitHub's own 'ghost' sentinel, never an empty id", () => {
+    const a = mapPullRequest("repo-a", rawPr({ user: null }));
+    const b = mapPullRequest("repo-a", rawPr({ number: 43, user: null }));
+    expect(a.authorAccountId).toBe("ghost");
+    expect(b.authorAccountId).toBe(a.authorAccountId);
+  });
+});
+
 describe("deriveReadyForReview", () => {
   it("uses the earliest ready_for_review event when one exists", () => {
     const events = [

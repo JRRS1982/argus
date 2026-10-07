@@ -21,7 +21,10 @@ export const mapPullRequest = (repoKey: string, raw: RawPullRequest): MappedPull
   return {
     provider: "github", repoKey, number: raw.number, title: raw.title,
     state: mergedOn !== null ? "MERGED" : raw.state === "open" ? "OPEN" : "CLOSED",
-    authorAccountId: raw.user?.login ?? "",
+    // A deleted account arrives as user: null. GitHub itself shows these as "ghost", and
+    // they really are indistinguishable, so one shared id is correct. It must not be "":
+    // an empty key reads as a bug and would create a nameless canonical person. Deliberate.
+    authorAccountId: raw.user?.login ?? "ghost",
     createdOn: raw.created_at,
     // Summary detail: the list has no draft history, so creation time stands in.
     readyForReviewOn: raw.created_at, readyForReviewPrecision: "fallback",
