@@ -36,7 +36,8 @@ export type ApprovalRecord = {
 // removing) from a transient failure like a 503 or a dropped socket, which must never
 // invite the user to drop a repo they still want.
 export type SkippedRepo = {
-  repoSlug: string;
+  provider: ProviderId;
+  repoKey: string;
   reason: string;
   status: number | null;
   missing: boolean;

@@ -1,18 +1,13 @@
 export const BITBUCKET_API = "https://api.bitbucket.org/2.0";
 
-import { ProviderApiError, describeHttpFailure as describeProviderFailure } from "@/lib/providers/types";
+import { ProviderApiError } from "@/lib/providers/types";
 
 export type FetchFn = typeof fetch;
 
 const BITBUCKET = { label: "Bitbucket", credentialVars: ["BITBUCKET_EMAIL", "BITBUCKET_API_TOKEN"] };
 
-// Bitbucket-bound form of the shared describeHttpFailure, kept so existing callers
-// need no change. The generic version lives in the provider port.
-export const describeHttpFailure = (status: number, statusText: string): string =>
-  describeProviderFailure(BITBUCKET, status, statusText);
-
-// A subclass of ProviderApiError so `instanceof BitbucketApiError` checks (sync's 401/429
-// run-wide abort) keep working while provider-agnostic code can catch ProviderApiError.
+// A subclass of ProviderApiError: provider-agnostic code (sync's 401/429 run-wide abort)
+// catches the base class, so no caller needs to know which provider failed.
 export class BitbucketApiError extends ProviderApiError {
   constructor(status: number, statusText: string, url: string) {
     super("bitbucket", BITBUCKET.label, BITBUCKET.credentialVars, status, statusText, url);

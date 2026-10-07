@@ -225,3 +225,12 @@ export const resolveServiceId = (db: Database.Database, provider: ProviderId, re
   ).get(provider, repoKey) as { service_id: number } | undefined;
   return row ? row.service_id : upsertServiceIdentity(db, provider, repoKey, repoKey, "main", null);
 };
+
+// Every identity of every included service, archived ones too: sync needs the archived
+// siblings to decide whether a service is entirely gone, though it never fetches them.
+export const getSyncableIdentities = (db: Database.Database) =>
+  getServices(db).filter((s) => s.included).flatMap((s) =>
+    s.identities.map((i) => ({
+      provider: i.provider, repoKey: i.repoKey, serviceId: s.id,
+      defaultBranch: i.defaultBranch, state: i.state,
+    })));

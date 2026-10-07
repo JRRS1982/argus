@@ -91,8 +91,8 @@ describe("TeamTab skipped repositories", () => {
       vi.fn((url: string) => {
         if (url === "/api/sync") {
           return Promise.resolve(syncResponse([
-            { repoSlug: "benchmarkme", reason: "Not found (404) — it no longer exists in this workspace.", status: 404, missing: true },
-            { repoSlug: "phobos", reason: "Bitbucket is unavailable (503) — try again shortly.", status: 503, missing: false },
+            { provider: "bitbucket", repoKey: "benchmarkme", reason: "Not found (404) — it no longer exists in this workspace.", status: 404, missing: true },
+            { provider: "bitbucket", repoKey: "phobos", reason: "Bitbucket is unavailable (503) — try again shortly.", status: 503, missing: false },
           ]));
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
@@ -120,7 +120,7 @@ describe("TeamTab skipped repositories", () => {
         calls.push({ url, init });
         if (url === "/api/sync") {
           return Promise.resolve(syncResponse([
-            { repoSlug: "benchmarkme", reason: "Not found (404).", status: 404, missing: true },
+            { provider: "bitbucket", repoKey: "benchmarkme", reason: "Not found (404).", status: 404, missing: true },
           ]));
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
@@ -155,7 +155,7 @@ describe("TeamTab wholesale sync failure", () => {
               repos: [], totalPrs: 0,
               error: "None of the 3 selected repositories could be refreshed. a: Not found (404).",
               skipped: ["a", "b", "c"].map((repoSlug) => ({
-                repoSlug, reason: "Not found (404).", status: 404, missing: true,
+                provider: "bitbucket", repoKey: repoSlug, reason: "Not found (404).", status: 404, missing: true,
               })),
             }),
           } as Response);

@@ -44,7 +44,11 @@ export default function TeamTab({
       setMessage(kind === "discover"
         ? `Discovered ${json.users} users, ${json.repos} repos.`
         : `Synced ${plural(json.totalPrs, "PR")} across ${plural(json.repos.length, "repo")}.`
-          + (json.skipped?.length ? ` ${json.skipped.length} skipped.` : ""));
+          // A rate-limited run is expected on a large backfill, not a fault: what finished
+          // is saved, and running it again carries on from there.
+          + (json.stoppedEarly
+            ? ` Stopped early — ${json.stoppedEarly.reason} Everything that finished is saved; run it again to continue.`
+            : json.skipped?.length ? ` ${json.skipped.length} skipped.` : ""));
       await reloadRoster();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -70,7 +74,7 @@ export default function TeamTab({
   // ever reports, so a temporary outage can never silently shrink the roster.
   const removeFromRoster = async (slug: string) => {
     if (await toggle("repo", slug, false)) {
-      setSkipped((current) => current.filter((item) => item.repoSlug !== slug));
+      setSkipped((current) => current.filter((item) => item.repoKey !== slug));
     }
   };
 
@@ -155,11 +159,11 @@ function SkippedRepos({
       </p>
       <ul className="mt-2 space-y-1">
         {items.map((item) => (
-          <li key={item.repoSlug} className="text-sm text-amber-900 flex flex-wrap items-baseline gap-x-2">
-            <span className="font-medium">{nameOf(item.repoSlug)}</span>
+          <li key={item.repoKey} className="text-sm text-amber-900 flex flex-wrap items-baseline gap-x-2">
+            <span className="font-medium">{nameOf(item.repoKey)}</span>
             <span className="text-amber-700">{item.reason}</span>
             {item.missing && allowRemoval && (
-              <button onClick={() => onRemove(item.repoSlug)}
+              <button onClick={() => onRemove(item.repoKey)}
                 title="Untick this repository so future refreshes skip it"
                 className="text-xs px-2 py-0.5 rounded border border-amber-400 text-amber-900 hover:bg-amber-100">
                 Remove from roster

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchAllPages, bitbucketGet, BitbucketApiError, describeHttpFailure } from "@/lib/bitbucket/client";
+import { fetchAllPages, bitbucketGet, BitbucketApiError } from "@/lib/bitbucket/client";
 
 const jsonResponse = (body: unknown) =>
   ({ ok: true, status: 200, statusText: "OK", json: async () => body }) as Response;
@@ -37,11 +37,11 @@ describe("BitbucketApiError", () => {
   });
 
   it("explains each status a sync can realistically hit", () => {
-    expect(describeHttpFailure(401, "Unauthorized")).toMatch(/BITBUCKET_API_TOKEN/);
-    expect(describeHttpFailure(403, "Forbidden")).toMatch(/denied/i);
-    expect(describeHttpFailure(404, "Not Found")).toMatch(/no longer exists/i);
-    expect(describeHttpFailure(429, "Too Many Requests")).toMatch(/rate limit/i);
-    expect(describeHttpFailure(503, "Service Unavailable")).toMatch(/unavailable/i);
-    expect(describeHttpFailure(418, "I'm a teapot")).toMatch(/418/);
+    expect(new BitbucketApiError(401, "Unauthorized", "u").message).toMatch(/BITBUCKET_API_TOKEN/);
+    expect(new BitbucketApiError(403, "Forbidden", "u").message).toMatch(/denied/i);
+    expect(new BitbucketApiError(404, "Not Found", "u").message).toMatch(/no longer exists/i);
+    expect(new BitbucketApiError(429, "Too Many Requests", "u").message).toMatch(/rate limit/i);
+    expect(new BitbucketApiError(503, "Service Unavailable", "u").message).toMatch(/unavailable/i);
+    expect(new BitbucketApiError(418, "I'm a teapot", "u").message).toMatch(/418/);
   });
 });
