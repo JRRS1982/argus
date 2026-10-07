@@ -97,4 +97,31 @@ describe("LeaderboardTab", () => {
     fireEvent.click(screen.getByText(/Alice/));
     expect(screen.queryByText(/draft transition unknown/)).toBeNull();
   });
+
+  it("says all N PRs use creation time when nothing has draft history (the Bitbucket day-one state)", () => {
+    render(<LeaderboardTab rows={[row({ prs: [
+      pr({ number: 1, readyForReviewPrecision: "fallback", mergedOnPrecision: "derived" }),
+      pr({ number: 2, readyForReviewPrecision: "fallback", mergedOnPrecision: "derived" }),
+    ] })]} />);
+    expect(screen.getByText(/Right now all 2 PRs use creation time — no draft→ready history has been synced\./)).toBeTruthy();
+    // Every row is derived, so there is no recorded-merge-time PR to describe.
+    expect(screen.queryByText(/PRs with a recorded merge time use that instead/)).toBeNull();
+  });
+
+  it("says X of N PRs use creation time for a mixed set, and mentions recorded merge times", () => {
+    render(<LeaderboardTab rows={[row({ prs: [
+      pr({ number: 1, readyForReviewPrecision: "fallback", mergedOnPrecision: "derived" }),
+      pr({ number: 2, readyForReviewPrecision: "exact", mergedOnPrecision: "exact" }),
+      pr({ number: 3, readyForReviewPrecision: "exact", mergedOnPrecision: "exact" }),
+    ] })]} />);
+    expect(screen.getByText(/Right now 1 of 3 PRs use creation time\./)).toBeTruthy();
+    expect(screen.getByText(/PRs with a recorded merge time use that instead/)).toBeTruthy();
+  });
+
+  it("makes no claim about PRs when the window is empty", () => {
+    render(<LeaderboardTab rows={[]} />);
+    expect(screen.queryByText(/recorded merge time/)).toBeNull();
+    expect(screen.queryByText(/for every PR/)).toBeNull();
+    expect(screen.queryByText(/Right now/)).toBeNull();
+  });
 });

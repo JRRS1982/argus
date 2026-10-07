@@ -17,6 +17,7 @@ export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
   const totalPrs = allPrs.length;
   const fallbackPrs = allPrs.filter((p) => p.readyForReviewPrecision === "fallback").length;
   const anyDerivedMerge = allPrs.some((p) => p.mergedOnPrecision === "derived");
+  const anyExactMerge = allPrs.some((p) => p.mergedOnPrecision === "exact");
 
   return (
     <section>
@@ -34,13 +35,13 @@ export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
             <>
               <span className="font-medium">created → last touched</span>. For some PRs the provider does not expose a
               merge timestamp, so the end of the interval is the PR&apos;s last activity — the merge for almost all
-              of them, but later if someone commented after it merged. PRs with a recorded merge time use that
-              instead.{" "}
+              of them, but later if someone commented after it merged.{" "}
+              {anyExactMerge && "PRs with a recorded merge time use that instead. "}
             </>
-          ) : (
+          ) : totalPrs > 0 ? (
             <>Each PR is measured to its recorded merge time. </>
-          )}
-          {fallbackPrs === 0 ? (
+          ) : null}
+          {totalPrs === 0 ? null : fallbackPrs === 0 ? (
             <>The start is the recorded draft→ready transition for every PR. </>
           ) : (
             <>
