@@ -104,8 +104,14 @@ const migration: Migration = {
       insertPersonIdentity.run(account_id, lastInsertRowid);
     }
 
-    // Services mirror repos one-for-one, keyed on slug for the same reason: repo names
-    // are not guaranteed unique either.
+    // Services are built from a union too, mirroring people: a slug can appear in the
+    // PR history, approvals or sync cursors without a `repos` row (deleted, or never
+    // discovered). Joining on `repos` alone would drop those PRs when migration 002
+    // rebuilds them, tripping the runner's row-count guard on a migration the user
+    // cannot get past.
+    //
+    // Keyed on slug and linked by the rowid each insert returns: repo names are not
+    // unique, so a join on name would cross the wires.
     //
     // Every Bitbucket identity is stamped 'archived' here as an asserted fact rather
     // than inferred later from a 404 — inferring repo state from an error code is
@@ -115,9 +121,19 @@ const migration: Migration = {
       main_branch: string; included: number;
     };
 
-    const repos = db.prepare(
-      `SELECT slug, name, project_key, main_branch, included FROM repos ORDER BY slug`,
-    ).all() as RepoRow[];
+    const slugs = db.prepare(`
+      SELECT slug FROM repos
+      UNION SELECT repo_slug FROM pull_requests
+      UNION SELECT repo_slug FROM approvals
+      UNION SELECT repo_slug FROM sync_state
+      ORDER BY slug
+    `).all() as { slug: string }[];
+
+    const repos = new Map(
+      (db.prepare(
+        `SELECT slug, name, project_key, main_branch, included FROM repos`,
+      ).all() as RepoRow[]).map((r) => [r.slug, r]),
+    );
 
     const cursors = new Map(
       (db.prepare(`SELECT repo_slug, last_synced_on FROM sync_state`).all() as
@@ -132,11 +148,14 @@ const migration: Migration = {
       VALUES ('bitbucket', ?, ?, ?, ?, 'archived', ?)
     `);
 
-    for (const repo of repos) {
-      const { lastInsertRowid } = insertService.run(repo.name, repo.included);
+    for (const { slug } of slugs) {
+      const repo = repos.get(slug);
+      // A slug with no repos row has no name to use, so the slug stands in; included
+      // stays 0 so tracking it remains a deliberate act.
+      const { lastInsertRowid } = insertService.run(repo?.name ?? slug, repo?.included ?? 0);
       insertServiceIdentity.run(
-        repo.slug, lastInsertRowid, repo.main_branch, repo.project_key,
-        cursors.get(repo.slug) ?? null,
+        slug, lastInsertRowid, repo?.main_branch ?? "main", repo?.project_key ?? null,
+        cursors.get(slug) ?? null,
       );
     }
   },

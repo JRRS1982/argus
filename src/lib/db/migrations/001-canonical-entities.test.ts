@@ -36,7 +36,7 @@ describe("migration 001 — canonical entities", () => {
     db.close();
   });
 
-  // Review Focus 1 — the 56.6% case.
+  // The 56.6% case: most historical authors were never discovered into users.
   it("creates a person for a PR author who was never discovered into users", () => {
     const db = legacy();
     db.exec(`INSERT INTO users VALUES ('u1','Alice',1)`);
@@ -95,12 +95,65 @@ describe("migration 001 — canonical entities", () => {
 
   it("leaves every original table untouched", () => {
     const db = legacy();
-    db.exec(`INSERT INTO users VALUES ('u1','Alice',1)`);
-    db.exec(`INSERT INTO pull_requests VALUES
-      ('repo-a',1,'u1','PR','MERGED','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',1,NULL,'main','https://x/1')`);
+    db.exec(`
+      INSERT INTO users VALUES ('u1','Alice',1), ('u2','Bob',0);
+      INSERT INTO repos VALUES ('repo-a','Repo A','PROJ','develop',1);
+      INSERT INTO pull_requests VALUES
+        ('repo-a',1,'u1','PR','MERGED','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',1,NULL,'main','https://x/1');
+      INSERT INTO approvals VALUES ('repo-a',1,'u2','2026-01-02T00:00:00Z');
+      INSERT INTO sync_state VALUES ('repo-a','2026-09-28T13:00:00Z');
+    `);
+    const dump = () => ({
+      users: db.prepare(`SELECT * FROM users ORDER BY account_id`).all(),
+      repos: db.prepare(`SELECT * FROM repos ORDER BY slug`).all(),
+      pull_requests: db.prepare(`SELECT * FROM pull_requests ORDER BY repo_slug, id`).all(),
+      approvals: db.prepare(`SELECT * FROM approvals ORDER BY repo_slug, pr_id, approver_account_id`).all(),
+      sync_state: db.prepare(`SELECT * FROM sync_state ORDER BY repo_slug`).all(),
+    });
+    const before = dump();
     run(db);
-    expect(db.prepare(`SELECT COUNT(*) c FROM users`).get()).toEqual({ c: 1 });
-    expect(db.prepare(`SELECT COUNT(*) c FROM pull_requests`).get()).toEqual({ c: 1 });
+    expect(dump()).toEqual(before);
+    db.close();
+  });
+
+  it("gives a service to a repo_slug that has no repos row, named after the slug and excluded", () => {
+    const db = legacy();
+    db.exec(`INSERT INTO pull_requests VALUES
+      ('gone-repo',1,'u1','PR','MERGED','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',1,NULL,'main','https://x/1')`);
+    db.exec(`INSERT INTO approvals VALUES ('appr-only',1,'u1',NULL)`);
+    db.exec(`INSERT INTO sync_state VALUES ('cursor-only','2026-09-28T13:00:00Z')`);
+    run(db);
+    const rows = db.prepare(
+      `SELECT i.repo_key, s.name, s.included, i.default_branch, i.group_key, i.state
+       FROM service_identities i JOIN services s ON s.id = i.service_id ORDER BY i.repo_key`).all();
+    expect(rows).toEqual([
+      { repo_key: "appr-only", name: "appr-only", included: 0, default_branch: "main", group_key: null, state: "archived" },
+      { repo_key: "cursor-only", name: "cursor-only", included: 0, default_branch: "main", group_key: null, state: "archived" },
+      { repo_key: "gone-repo", name: "gone-repo", included: 0, default_branch: "main", group_key: null, state: "archived" },
+    ]);
+    db.close();
+  });
+
+  it("keeps services distinct when two repos share a name", () => {
+    const db = legacy();
+    db.exec(`INSERT INTO repos VALUES ('a-api','API','P1','main',1), ('b-api','API','P2','main',0)`);
+    run(db);
+    const rows = db.prepare(
+      `SELECT i.repo_key, i.service_id, s.included FROM service_identities i
+       JOIN services s ON s.id = i.service_id ORDER BY i.repo_key`).all() as
+      { repo_key: string; service_id: number; included: number }[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].service_id).not.toBe(rows[1].service_id);
+    expect(rows.map((r) => r.included)).toEqual([1, 0]);
+    db.close();
+  });
+
+  it("records a null last_synced_on for a repo that has never been synced", () => {
+    const db = legacy();
+    db.exec(`INSERT INTO repos VALUES ('repo-a','Repo A',NULL,'main',1)`);
+    run(db);
+    expect(db.prepare(`SELECT last_synced_on FROM service_identities`).get())
+      .toEqual({ last_synced_on: null });
     db.close();
   });
 
