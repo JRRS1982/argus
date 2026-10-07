@@ -58,6 +58,7 @@ fixes" — per-repo sync error isolation — was later landed standalone as `1c0
 | One provider selected by `ARGUS_PROVIDER` | Both providers active simultaneously | A service's history spans both; the UI must show one continuous record |
 | "The SQLite cache is disposable"; drop and recreate on schema-version mismatch | **The cache is irreplaceable. Nothing is ever dropped.** | Bitbucket permissions changed; the history may be unrecoverable |
 | Cross-provider identity not addressed | Canonical people and services with per-provider identities | Cannot arise under a single-provider design; unavoidable here |
+| Both providers fetched | **Bitbucket frozen as a read-only archive; only GitHub is fetched** | Everything has migrated and Bitbucket permissions already lapsed once; not fetching it removes the risk rather than handling it |
 
 **Deferred** (not required by dual-provider; a later cycle)
 
@@ -172,6 +173,13 @@ hardcoding Bitbucket's.
 New `src/lib/github/`: `client.ts` (bearer auth, Link-header pagination, error mapping),
 `discover.ts`, `pulls.ts`, `map.ts`, `index.ts`.
 
+**The Bitbucket adapter is retained but never invoked by sync.** Since Bitbucket is archived, its
+`listPullRequests` is dead code in normal operation, and the UI reads timestamp quality from the
+stored per-record `Precision` columns rather than from its capabilities. It is kept anyway for two
+reasons: re-enabling it is a config flip rather than a rewrite if permissions are ever restored, and
+a port with only one live implementation drifts towards that implementation. The fixture provider
+and the contract suite are the primary guard against that; the Bitbucket adapter is a second.
+
 ## Discover and auto-linking
 
 Discovery runs per provider and links into canonical entities by normalised name (lower-cased,
@@ -209,33 +217,76 @@ and it is named here so a future reader does not tick it by mistake.
 No special-casing in code: it is an ordinary excluded person. Encoding a hardcoded bot list would be
 a rule the Team tab already expresses better.
 
-## Dormant identities
+## Bitbucket is a frozen archive
 
-A provider identity has a `state`: `active`, `dormant`, or `missing`.
+**Argus never writes to Bitbucket again.** Everything has migrated, the token's permissions have
+already changed once, and the cached history is irreplaceable — so the safest and cheapest posture
+is to stop fetching from it entirely and serve the 7,603 cached PRs as a read-only historical record.
 
-Post-migration, a Bitbucket 404 is ambiguous — it may mean deleted, or merely no longer visible to
-a token whose permissions changed. So:
+This removes a class of work and risk rather than deferring it: no Bitbucket cursor to advance, no
+incremental fetch, no 401/429 handling for a credential that may lapse at any time, and no way for a
+Bitbucket outage or permission change to stall or corrupt a refresh. Only GitHub is ever fetched.
 
-- A 404 on a service that has a **healthy identity on another provider** marks the Bitbucket
-  identity **`dormant`**: its cursor stops advancing, every cached row is retained and still counted,
-  and it is silent in the warning panel. This is the normal, expected end state for a migrated repo.
-- A 404 on a service with **no live identity anywhere** marks it `missing` and surfaces in the
-  warning panel, exactly as today.
-- **"Remove from roster" is offered only for a service where every identity is `missing`.** A
-  service with any dormant or active identity can never be offered for removal, because its history
-  is real and irreplaceable.
+### Identity states
+
+A provider identity has a `state`: `active`, `archived`, or `missing`.
+
+- **Every Bitbucket identity is `archived`**, set once by Migration 1 rather than discovered through
+  a 404. Its rows are retained and counted in every window; it is never fetched and never appears in
+  the warning panel. This is the normal end state for a migrated repo, and it is a fact we assert
+  rather than infer.
+- **GitHub identities are `active`**, or `missing` on a 404 against the repo's own PR list, which
+  surfaces in the warning panel exactly as today.
+- **"Remove from roster" is offered only for a service whose every identity is `missing`.** A
+  service holding archived Bitbucket history can never be offered for removal — that history is
+  real and unrecoverable. This is the rule that would have prevented August's near-miss, when
+  `benchmarkme` and `chameleon-documentation` were reported as deleted after merely moving.
 
 Nothing is ever un-ticked automatically, as today.
 
 ## Sync
 
-`syncAll` iterates `service_identities` whose service is included, each with its own cursor, so a
-migrated service syncs from both providers and the Bitbucket side simply stops yielding new PRs.
+`syncAll` iterates `service_identities` whose service is included **and whose state is `active`** —
+in practice, the GitHub identities. Archived identities are skipped without a request.
 
-The existing per-repo error isolation is preserved. One deliberate change: the run-wide abort on
-`401` / `429` becomes **per-provider**. An expired GitHub token must not halt Bitbucket syncing, and
-vice versa; remaining repos on the *other* provider are still attempted, and the affected
-provider's repos are reported as not attempted.
+Because only one provider is ever fetched, the per-provider abort handling considered earlier is
+unnecessary: the existing run-wide `401`/`429` abort and per-repo error isolation carry over
+unchanged. That is a direct simplification bought by the archive decision.
+
+### Depth
+
+GitHub exposes `merged_at` directly, so the *end* of the review interval is exact for every PR with
+no extra work — an immediate improvement on Bitbucket's `updated_on` proxy. The *start* is the
+draft→ready transition, which needs one timeline call per PR.
+
+- **Backfill runs deep**: roughly 2,900 timeline calls for the org's human-authored PRs, a one-off
+  cost comfortably inside the 5,000/hour limit, yielding real ready-for-review times.
+- **Incremental runs fast by default**, and may run deep when the changed set is small, since a
+  daily refresh touches few PRs.
+
+A PR whose ready time could not be derived keeps `ready_for_review_precision = 'fallback'` and the
+leaderboard's `*` flag, as today — but after a deep backfill that should be rare on GitHub rows,
+where today it is universal.
+
+## Data freshness, per provider
+
+The highlights strip's "Data refreshed" card currently shows a single newest-sync stamp. With two
+providers that is misleading, because the two numbers mean different things and only one of them
+ever moves again. The card lists both, labelled:
+
+```
+Data refreshed
+GitHub      7 Oct 2026, 14:02      ← live; moves on every refresh
+Bitbucket   archived 28 Sep 2026   ← frozen; will not change again
+```
+
+Bitbucket's line says **archived**, not "last pulled" — "last pulled" implies it might pull again,
+which under this design it never will. `InsightsResponse.lastRefreshedAt` (today a
+single nullable string) therefore becomes a small list — one entry per provider holding its id,
+label, timestamp and whether it is archived — so the card renders from data rather than from a
+hardcoded provider list. A provider with no data yet is omitted rather than shown as
+"Never", so a GitHub-only instance shows one line and no confusing empty Bitbucket row. Demo mode
+shows its per-request generation instant as a single line, as today.
 
 ## Analytics
 
@@ -256,7 +307,8 @@ printed, because it would be false.
   With 768 discovered services this is what makes the list usable. The same comparator applies to
   people.
 - A "same as…" control links an unlinked entity into an existing one; merges are reversible.
-- The skipped-repo warning panel distinguishes dormant from missing per the rules above.
+- The skipped-repo warning panel shows only `missing` GitHub identities. Archived Bitbucket
+  identities are never listed as problems — being archived is their normal, expected state.
 
 ## Config
 
@@ -289,7 +341,7 @@ or both without code changes. `isDemoAvailable` generalises from "no Bitbucket c
 2. Canonical identity model and query layer.
 3. Provider port; refactor Bitbucket behind it. No behaviour change.
 4. GitHub adapter, against the contract suite.
-5. Discover auto-linking; sync per identity; dormant-state handling.
+5. Discover auto-linking; sync active identities only; archived-state handling.
 6. Team tab: badges, included-first ordering, merge control.
 7. Capability-driven copy; per-row precision.
 8. Update `CLAUDE.md` and `README.md`.
@@ -298,8 +350,10 @@ or both without code changes. `isDemoAvailable` generalises from "no Bitbucket c
 
 - **Data loss during migration.** The dominant risk, and the reason step 1 lands alone behind
   verified snapshots, an in-transaction rebuild and a row-count assertion.
-- **Bitbucket visibility is already degraded.** Some repos may now 404 that previously did not.
-  Handled by the dormant state; no cached row is affected either way.
+- **Bitbucket visibility is already degraded.** Largely neutralised: Bitbucket is never fetched, so
+  a revoked permission or a deleted repo cannot affect a refresh or a cached row at all. The cost is
+  that any PR still merged to Bitbucket after the archive date is invisible — accepted, since
+  everything has migrated.
 - **Identity auto-linking is a heuristic.** Measured at ~86%; the merge control is the escape hatch,
   and a wrong link is reversible.
 - **Duplicate PRs — measured, and effectively absent.** The concern was that a mirrored repo could
