@@ -42,8 +42,10 @@ export const computeLeaderboard = (
     const ms = reviewDurationMs(pr);
     if (ms === null) continue;
     const item: LeaderboardPR = {
-      number: pr.number, repoKey: pr.repoKey, title: pr.title, url: pr.url,
-      reviewMs: ms, readyIsFallback: pr.readyForReviewPrecision === "fallback",
+      number: pr.number, provider: pr.provider, repoKey: pr.repoKey, title: pr.title, url: pr.url,
+      reviewMs: ms, readyForReviewPrecision: pr.readyForReviewPrecision,
+      // A merged PR always has mergedOn; a missing precision is treated as the weaker claim.
+      mergedOnPrecision: pr.mergedOnPrecision ?? "derived",
     };
     const list = byAuthor.get(pr.personId) ?? [];
     list.push(item);

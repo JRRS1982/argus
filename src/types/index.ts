@@ -51,7 +51,11 @@ export type LeaderboardPR = {
   title: string;
   url: string;
   reviewMs: number;
-  readyIsFallback: boolean;
+  provider: ProviderId;
+  // Carried per PR so the UI can say what each figure rests on, rather than printing a
+  // blanket caveat that is true of one provider and false of the other.
+  readyForReviewPrecision: Precision; // "fallback" => start is creation time
+  mergedOnPrecision: Precision;       // "derived" => end is last-touched, not a real merge time
 };
 
 export type LeaderboardRow = {

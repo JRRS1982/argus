@@ -108,7 +108,10 @@ describe("computeLeaderboard", () => {
     ];
     const [alice] = computeLeaderboard(prs, repos, users, SINCE);
     expect(alice.prs.map((p) => p.number)).toEqual([2, 1]); // slowest first
-    expect(alice.prs[0].readyIsFallback).toBe(true);
+    expect(alice.prs[0].readyForReviewPrecision).toBe("fallback");
+    expect(alice.prs[1].readyForReviewPrecision).toBe("derived");
+    expect(alice.prs[0].provider).toBe("bitbucket");
+    expect(alice.prs[0].mergedOnPrecision).toBe("derived");
   });
 
   it("orders engineers by name, not by speed, so the table is not a scoreboard", () => {
