@@ -227,6 +227,9 @@ type FreshnessRow = { provider: string; last: string; archived: number };
 // One row per provider that has actually synced an included service. A provider with
 // no data is absent rather than reported as "Never", so a GitHub-only instance shows
 // one line instead of an empty Bitbucket row.
+// `archived` is MIN over the identities' 1/0 flags, so a provider counts as archived only
+// when EVERY stamped identity of it is archived: one archived identity alongside live
+// ones leaves the provider live, because its stamp can still move.
 export const getLastRefreshedByProvider = (
   db: Database.Database,
 ): { provider: ProviderId; lastSyncedOn: string; archived: boolean }[] =>
