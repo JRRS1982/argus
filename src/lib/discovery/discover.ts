@@ -2,11 +2,23 @@
 import type Database from "better-sqlite3";
 import type { PullRequestProvider } from "@/lib/providers/types";
 import type { ProviderId } from "@/types";
-import { findLinkTarget } from "@/lib/analytics/linking";
+import { findLinkTarget, normaliseKey } from "@/lib/analytics/linking";
 import {
   getPeople, getServices, upsertPersonIdentity, upsertServiceIdentity,
   linkPersonIdentity, linkServiceIdentity,
 } from "@/lib/db/canonical";
+
+// Keys occurring more than once in the incoming batch. Linking one of them would pick
+// a winner by arrival order, which is a coin-flip merge — so none of them link.
+const ambiguousKeys = (names: string[]): Set<string> => {
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const n of names) {
+    const k = normaliseKey(n);
+    (seen.has(k) ? dupes : seen).add(k);
+  }
+  return dupes;
+};
 
 export type DiscoverSummary = {
   provider: ProviderId;
@@ -35,12 +47,15 @@ export const discoverProvider = async (
     linkedRepos: 0, linkedPeople: 0,
   };
 
+  const alikeRepos = ambiguousKeys(repos.map((r) => r.name));
+  const alikePeople = ambiguousKeys(people.map((p) => p.displayName));
+
   db.transaction(() => {
     for (const r of repos) {
       const known = identityKnown(db, "service_identities", "repo_key", provider.id, r.repoKey);
       // Candidates exclude services already holding an identity from this provider:
       // two repos of one provider are two repos, whatever their names normalise to.
-      const target = known ? null : findLinkTarget(
+      const target = known || alikeRepos.has(normaliseKey(r.name)) ? null : findLinkTarget(
         getServices(db).filter((s) => !s.identities.some((i) => i.provider === provider.id)), r.name,
       );
       upsertServiceIdentity(db, provider.id, r.repoKey, r.name, r.defaultBranch, r.groupKey);
@@ -51,7 +66,7 @@ export const discoverProvider = async (
     }
     for (const p of people) {
       const known = identityKnown(db, "person_identities", "account_id", provider.id, p.accountId);
-      const target = known ? null : findLinkTarget(
+      const target = known || alikePeople.has(normaliseKey(p.displayName)) ? null : findLinkTarget(
         getPeople(db)
           .filter((x) => !x.identities.some((i) => i.provider === provider.id))
           .map((x) => ({ id: x.id, name: x.displayName })),

@@ -109,7 +109,7 @@ describe("POST /api/discover — GitHub auto-linking", () => {
     expect(snapshot()).toBe(after);
   });
 
-  it("never alters an include flag, and respects a hand-made unlink on re-run", async () => {
+  it("never alters an include flag, including one ticked after the first run", async () => {
     await call();
     const flags = () => JSON.stringify([
       getServices(h.db).map((s) => [s.name, s.included]),
