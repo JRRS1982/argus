@@ -1,40 +1,22 @@
 export const BITBUCKET_API = "https://api.bitbucket.org/2.0";
 
+import { ProviderApiError, describeHttpFailure as describeProviderFailure } from "@/lib/providers/types";
+
 export type FetchFn = typeof fetch;
 
-// Plain-English cause for an HTTP status, phrased so a caller can prefix it with
-// what it was fetching ("benchmarkme: Not found (404) — …"). The raw request URL
-// is deliberately absent: a Bitbucket PR URL carries a ~400-character query
-// string of states and field selectors, which is noise in a UI message. It stays
-// on BitbucketApiError.url for logs.
-export const describeHttpFailure = (status: number, statusText: string): string => {
-  switch (status) {
-    case 401:
-      return "Bitbucket rejected the credentials (401) — check BITBUCKET_EMAIL and BITBUCKET_API_TOKEN.";
-    case 403:
-      return "Access denied (403) — the API token lacks permission for this resource.";
-    case 404:
-      return "Not found (404) — it no longer exists in this workspace, or the token cannot see it.";
-    case 429:
-      return "Hit Bitbucket's rate limit (429) — wait a minute, then try again.";
-    default:
-      return status >= 500
-        ? `Bitbucket is unavailable (${status} ${statusText}) — try again shortly.`
-        : `Bitbucket API error: ${status} ${statusText}.`;
-  }
-};
+const BITBUCKET = { label: "Bitbucket", credentialVars: ["BITBUCKET_EMAIL", "BITBUCKET_API_TOKEN"] };
 
-export class BitbucketApiError extends Error {
-  readonly status: number;
-  readonly statusText: string;
-  readonly url: string;
+// Bitbucket-bound form of the shared describeHttpFailure, kept so existing callers
+// need no change. The generic version lives in the provider port.
+export const describeHttpFailure = (status: number, statusText: string): string =>
+  describeProviderFailure(BITBUCKET, status, statusText);
 
+// A subclass of ProviderApiError so `instanceof BitbucketApiError` checks (sync's 401/429
+// run-wide abort) keep working while provider-agnostic code can catch ProviderApiError.
+export class BitbucketApiError extends ProviderApiError {
   constructor(status: number, statusText: string, url: string) {
-    super(describeHttpFailure(status, statusText));
+    super("bitbucket", BITBUCKET.label, BITBUCKET.credentialVars, status, statusText, url);
     this.name = "BitbucketApiError";
-    this.status = status;
-    this.statusText = statusText;
-    this.url = url;
   }
 }
 
