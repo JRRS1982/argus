@@ -46,9 +46,9 @@ describe("Dashboard", () => {
   });
 
   it.each([
-    ["a refreshed cache", "2026-08-12T09:30:00.000Z", /12 Aug 2026/],
-    ["a never-synced cache", null, /run Refresh data on the Team tab/],
-  ])("shows the last-refreshed card for %s", async (_name, lastRefreshedAt, expected) => {
+    ["a refreshed cache", [{ provider: "github", lastSyncedOn: "2026-08-12T09:30:00.000Z", archived: false }], /12 Aug 2026/],
+    ["a never-synced cache", [], /run Refresh data on the Team tab/],
+  ])("shows the last-refreshed card for %s", async (_name, refreshedAt, expected) => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
@@ -56,7 +56,7 @@ describe("Dashboard", () => {
           const insights = {
             leaderboard: [], prsCreated: EMPTY_MATRIX, approvals: EMPTY_MATRIX,
             window: "6m", sinceIso: "2026-02-13T00:00:00.000Z", generatedAt: "2026-08-13T00:00:00.000Z",
-            lastRefreshedAt,
+            refreshedAt,
           };
           return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
         }
@@ -86,7 +86,7 @@ describe("Dashboard", () => {
             },
             approvals: EMPTY_MATRIX,
             window: "6m", sinceIso: "2026-02-13T00:00:00.000Z", generatedAt: "2026-08-13T00:00:00.000Z",
-            lastRefreshedAt: "2026-08-12T09:30:00.000Z",
+            refreshedAt: [{ provider: "github", lastSyncedOn: "2026-08-12T09:30:00.000Z", archived: false }],
           };
           return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
         }
@@ -116,7 +116,7 @@ describe("Dashboard", () => {
         }
         const insights = {
           leaderboard: [], prsCreated: EMPTY_MATRIX, approvals: EMPTY_MATRIX,
-          window: "6m", sinceIso: "2026-01-29T00:00:00.000Z", generatedAt: "2026-07-29T00:00:00.000Z",
+          window: "6m", sinceIso: "2026-01-29T00:00:00.000Z", generatedAt: "2026-07-29T00:00:00.000Z", refreshedAt: [],
         };
         return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
       }),

@@ -26,16 +26,15 @@ export async function GET(req: NextRequest) {
     // source differs.
     const demo = isDemoRequest(req.nextUrl);
     const generatedAtEarly = new Date().toISOString();
-    const { people, services, prs, approvals, lastRefreshedAt } = demo
-      ? { ...buildDemoDataset(generatedAtEarly), lastRefreshedAt: generatedAtEarly }
+    const { people, services, prs, approvals, refreshedAt } = demo
+      ? { ...buildDemoDataset(generatedAtEarly), refreshedAt: [{ provider: "demo" as const, lastSyncedOn: generatedAtEarly, archived: false }] }
       : (() => {
           const db = getDb();
           return {
             people: getPeople(db), services: getServices(db),
             prs: getPullRequests(db), approvals: getApprovals(db),
-            // One stamp per provider now; the single card shows the first until it is
-            // restyled to show each.
-            lastRefreshedAt: getLastRefreshedByProvider(db)[0]?.lastSyncedOn ?? null,
+            // Per provider, so the card can tell a live stamp from a frozen archive's.
+            refreshedAt: getLastRefreshedByProvider(db),
           };
         })();
 
@@ -53,7 +52,7 @@ export async function GET(req: NextRequest) {
       window,
       sinceIso,
       generatedAt,
-      lastRefreshedAt,
+      refreshedAt,
     };
     return NextResponse.json(body);
   } catch (err) {

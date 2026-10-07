@@ -81,10 +81,17 @@ export type InsightsResponse = {
   window: InsightsWindow;
   sinceIso: string;
   generatedAt: string;
-  // Newest sync stamp among included repos — when the cache was last refreshed.
-  // Null until a first sync; in demo mode the data is generated per request, so
-  // this is simply generatedAt.
-  lastRefreshedAt: string | null;
+  // When each provider last synced, one entry per provider that has data (none until
+  // a first sync). Bitbucket is a frozen archive, so its stamp never moves again while
+  // GitHub's does; they are kept apart so the UI can say so. Demo data is generated per
+  // request, so it is one "demo" entry stamped generatedAt.
+  refreshedAt: RefreshStamp[];
+};
+
+export type RefreshStamp = {
+  provider: ProviderId | "demo";
+  lastSyncedOn: string;
+  archived: boolean;
 };
 
 export type Precision = "exact" | "derived" | "fallback";

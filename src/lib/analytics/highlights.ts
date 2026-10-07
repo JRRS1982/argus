@@ -7,7 +7,18 @@ export type Highlight = {
   // count on the "PRs considered" context card.
   engineer: string;
   value: string;
+  // The "Data refreshed" card lists one line per provider instead of a headline.
+  lines?: { label: string; value: string }[];
 };
+
+const PROVIDER_LABEL = { github: "GitHub", bitbucket: "Bitbucket", demo: "Demo" } as const;
+
+// UTC, like formatWindowLabel, so the stamp reads the same wherever it is viewed.
+const fmtUtc = (iso: string, withTime: boolean): string =>
+  new Intl.DateTimeFormat("en-GB", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+    ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  }).format(new Date(iso));
 
 // Index of the largest value, or null when nothing is above zero. Ties take the
 // first index; rows are already alphabetical, so the result is deterministic.
@@ -69,18 +80,20 @@ export const computeHighlights = (insights: InsightsResponse): Highlight[] => {
     });
   }
 
-  // Context again: when the cache last pulled from Bitbucket. The tabs read the
-  // local cache, so anything merged since this instant is missing until the next
-  // refresh. Runs on the client, so the local timezone is the right one.
+  // Context again: when each provider last synced. The tabs read the local cache, so
+  // anything merged since is missing until the next refresh. Live providers come first
+  // (the number that can still move). An archived one says "archived", not "last
+  // pulled": Bitbucket will never be pulled again. A provider with no data never
+  // reaches here, so it is omitted rather than shown as "Never".
+  const lines = [...insights.refreshedAt]
+    .sort((a, b) => Number(a.archived) - Number(b.archived) || a.provider.localeCompare(b.provider))
+    .map((r) => ({
+      label: PROVIDER_LABEL[r.provider],
+      value: r.archived ? `archived ${fmtUtc(r.lastSyncedOn, false)}` : fmtUtc(r.lastSyncedOn, true),
+    }));
   out.push(
-    insights.lastRefreshedAt
-      ? {
-          key: "refreshed", label: "Data refreshed",
-          engineer: new Date(insights.lastRefreshedAt).toLocaleString("en-GB", {
-            day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-          }),
-          value: "last pull from Bitbucket",
-        }
+    lines.length > 0
+      ? { key: "refreshed", label: "Data refreshed", engineer: "", value: "", lines }
       : {
           key: "refreshed", label: "Data refreshed",
           engineer: "Never",
