@@ -79,7 +79,13 @@ export const upsertPersonIdentity = (
   ).get(provider, accountId) as { person_id: number } | undefined;
 
   if (existing) {
-    db.prepare(`UPDATE people SET display_name = ? WHERE id = ?`).run(displayName, existing.person_id);
+    // Only a single-identity person tracks the provider's name. Once identities are
+    // merged, whichever was upserted last would otherwise win, flipping the name
+    // between Discover runs.
+    db.prepare(`
+      UPDATE people SET display_name = ?
+      WHERE id = ? AND (SELECT COUNT(*) FROM person_identities WHERE person_id = ?) = 1
+    `).run(displayName, existing.person_id, existing.person_id);
     return existing.person_id;
   }
   // New arrivals are excluded: the workspace holds hundreds of accounts and only
@@ -137,9 +143,22 @@ const relink = (
     db.prepare(
       `UPDATE ${identityTable} SET ${idColumn} = ? WHERE provider = ? AND ${keyColumn} = ?`,
     ).run(intoId, provider, key);
-    db.prepare(`UPDATE pull_requests SET ${idColumn} = ? WHERE ${idColumn} = ?`).run(intoId, row.id);
-    if (idColumn === "person_id") {
-      db.prepare(`UPDATE approvals SET person_id = ? WHERE person_id = ?`).run(intoId, row.id);
+    // Scope to the identity being moved, not the whole old entity: the entity may keep
+    // other identities whose rows must stay where they are.
+    if (idColumn === "service_id") {
+      db.prepare(
+        `UPDATE pull_requests SET service_id = ? WHERE service_id = ? AND provider = ? AND repo_key = ?`,
+      ).run(intoId, row.id, provider, key);
+    } else {
+      // pull_requests has no author-account column, so (provider, person_id) is the
+      // tightest scope available. Residual: a person holding two identities on the
+      // same provider cannot be told apart, so such a move is bounded to that provider.
+      db.prepare(
+        `UPDATE pull_requests SET person_id = ? WHERE person_id = ? AND provider = ?`,
+      ).run(intoId, row.id, provider);
+      db.prepare(
+        `UPDATE approvals SET person_id = ? WHERE person_id = ? AND provider = ? AND approver_account_id = ?`,
+      ).run(intoId, row.id, provider, key);
     }
     const remaining = db.prepare(
       `SELECT COUNT(*) AS c FROM ${identityTable} WHERE ${idColumn} = ?`,
