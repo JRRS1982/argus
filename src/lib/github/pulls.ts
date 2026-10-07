@@ -2,6 +2,7 @@ import type { ApprovalRecord, Precision, PullRequestRecord } from "@/types";
 import { GITHUB_API, fetchAllPages, type FetchFn } from "./client";
 import { tagRepoLevel } from "@/lib/providers/repo-level";
 
+import { ProviderApiError } from "@/lib/providers/types";
 export type RawPullRequest = {
   number: number; title: string; state: string;
   created_at: string; updated_at?: string; merged_at: string | null;
@@ -80,8 +81,10 @@ export const fetchPullRequests = async (
       return oldest !== undefined && Date.parse(oldest) < cursor;
     });
   } catch (err) {
-    // Only this call speaks for the repo: a 404 here can mean it is gone.
-    throw tagRepoLevel(err);
+    // Only the FIRST request speaks for the repo: a 404 there can mean it is gone. A failure
+    // on page 2+ (a stale pagination cursor) says nothing about the repo, so is not tagged.
+    // The error carries the URL it failed on, which identifies the first request exactly.
+    throw err instanceof ProviderApiError && err.url === url ? tagRepoLevel(err) : err;
   }
   return all.filter((p) => p.updated_at === undefined || Date.parse(p.updated_at) >= cursor);
 };

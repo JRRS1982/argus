@@ -117,6 +117,19 @@ describe("fetchPullRequests paging", () => {
 
   });
 
+  it("tags only a first-page 404: a 404 on page 2 is a cursor failure, not a missing repo", async () => {
+    const page2 = vi.fn()
+      .mockResolvedValueOnce(res(prs(1, 3), { headers: { Link: '<https://api.github.com/p2>; rel="next"' } }))
+      .mockResolvedValueOnce(new Response("", { status: 404 }));
+    const later = await fetchPullRequests("o", "r", "1970-01-01T00:00:00Z", "t", page2).catch((e) => e);
+    expect(later).toBeInstanceOf(ProviderApiError);
+    expect(isRepoLevel(later)).toBe(false);
+
+    const page1 = vi.fn().mockResolvedValue(new Response("", { status: 404 }));
+    const first = await fetchPullRequests("o", "r", "1970-01-01T00:00:00Z", "t", page1).catch((e) => e);
+    expect(isRepoLevel(first)).toBe(true);
+  });
+
   it("does not tag a 404 from one PR's reviews", async () => {
     const fetchFn = vi.fn(async (url: string) =>
       url.includes("/pulls?") ? res([{ ...rawPr(), updated_at: "2026-07-02T12:00:00Z" }]) : new Response("", { status: 404 }));

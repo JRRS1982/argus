@@ -188,6 +188,23 @@ export const linkServiceIdentity = (
 // The reverse of a merge: gives one identity of a multi-identity entity an entity of its
 // own again, excluded like any new arrival and named by the provider's own key. A no-op
 // for an identity that already stands alone, so a double click cannot mint a duplicate.
+//
+// Refuses when the person holds more than one identity on this provider. pull_requests has
+// no author-account column, so relink can only re-point PRs by (provider, person): with two
+// identities on one provider it would drag BOTH identities' PRs onto the new entity while
+// moving only one identity's approvals. Migration 001 names raw-account-id people and the
+// Team tab recommends merging them into the named person, so this state is reachable.
+export class AmbiguousSplitError extends Error {
+  constructor(provider: ProviderId, accountId: string) {
+    super(
+      `Cannot split ${provider} account "${accountId}": this person has more than one ${provider} ` +
+      `identity, and pull requests record only the person, not which account authored them, so ` +
+      `the split would move every one of their ${provider} pull requests. Nothing was changed.`,
+    );
+    this.name = "AmbiguousSplitError";
+  }
+}
+
 export const splitPersonIdentity = (db: Database.Database, provider: ProviderId, accountId: string): void => {
   db.transaction(() => {
     const row = db.prepare(
@@ -196,6 +213,10 @@ export const splitPersonIdentity = (db: Database.Database, provider: ProviderId,
     if (!row) return;
     const siblings = db.prepare(`SELECT COUNT(*) AS c FROM person_identities WHERE person_id = ?`).get(row.id) as { c: number };
     if (siblings.c < 2) return;
+    const sameProvider = db.prepare(
+      `SELECT COUNT(*) AS c FROM person_identities WHERE person_id = ? AND provider = ?`,
+    ).get(row.id, provider) as { c: number };
+    if (sameProvider.c > 1) throw new AmbiguousSplitError(provider, accountId);
     const { lastInsertRowid } = db.prepare(`INSERT INTO people (display_name, included) VALUES (?, 0)`).run(accountId);
     linkPersonIdentity(db, provider, accountId, Number(lastInsertRowid));
   })();

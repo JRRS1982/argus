@@ -111,6 +111,18 @@ describe("/api/roster over canonical entities", () => {
     expect(getPeople(h.db)).toHaveLength(2);
   });
 
+  it("refuses with 400 to split a person holding two identities on one provider", async () => {
+    upsertBitbucketUsers(h.db, [{ accountId: "bb1", displayName: "Alice Smith" }]);
+    upsertPersonIdentity(h.db, "bitbucket", "raw-id", "raw-id");
+    const alice = getPeople(h.db).find((p) => p.displayName === "Alice Smith")!;
+    await patch({ kind: "person", action: "merge", provider: "bitbucket", key: "raw-id", intoId: alice.id });
+
+    const res = await patch({ kind: "person", action: "split", provider: "bitbucket", key: "raw-id" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/more than one bitbucket identity/i);
+    expect(getPeople(h.db)).toHaveLength(1);
+  });
+
   it("reports a ticked service whose active identity's provider has no credentials", async () => {
     const id = upsertServiceIdentity(h.db, "github", "gh-only", "gh-only", "main", null);
     await patch({ kind: "service", id, included: true });

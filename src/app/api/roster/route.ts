@@ -3,7 +3,7 @@ import { config, hasBitbucketCredentials } from "@/config";
 import { getDb } from "@/lib/db";
 import {
   getPeople, getServices, setPersonIncluded, setServiceIncluded,
-  linkPersonIdentity, linkServiceIdentity, splitPersonIdentity, splitServiceIdentity,
+  linkPersonIdentity, linkServiceIdentity, splitPersonIdentity, splitServiceIdentity, AmbiguousSplitError,
 } from "@/lib/db/canonical";
 import { isDemoRequest } from "@/lib/demo/request";
 import { buildDemoDataset } from "@/lib/demo/fixture";
@@ -80,6 +80,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    // A refused split is the caller's request being unsafe, not a server fault.
+    if (err instanceof AmbiguousSplitError) return NextResponse.json({ error: message }, { status: 400 });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

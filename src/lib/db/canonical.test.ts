@@ -6,6 +6,7 @@ import {
   getPeople, getServices, setPersonIncluded, setServiceIncluded,
   upsertPersonIdentity, upsertServiceIdentity, linkServiceIdentity, linkPersonIdentity,
   setServiceIdentityState, getLastRefreshedByProvider,
+  splitPersonIdentity, AmbiguousSplitError,
 } from "@/lib/db/canonical";
 
 const freshDb = () => { const db = new Database(":memory:"); applySchema(db); return db; };
@@ -235,6 +236,77 @@ describe("linkPersonIdentity", () => {
     linkPersonIdentity(db, "github", "gh", keep);
     upsertPersonIdentity(db, "github", "gh", "asmith");
     expect(getPeople(db)[0].displayName).toBe("Alice Smith");
+    db.close();
+  });
+});
+
+// Failure scenario: if this is wrong, a user clicks "split Bitbucket" on a person holding two
+// Bitbucket accounts and every one of that person's Bitbucket PRs moves to the new entity,
+// because pull_requests records the person but not the authoring account.
+describe("splitPersonIdentity on a person with two identities on one provider", () => {
+  const setup = () => {
+    const db = freshDb();
+    const svc = upsertServiceIdentity(db, "bitbucket", "R", "R", "main", null);
+    const alice = upsertPersonIdentity(db, "bitbucket", "bb-named", "Alice");
+    upsertPersonIdentity(db, "bitbucket", "bb-raw", "bb-raw");
+    linkPersonIdentity(db, "bitbucket", "bb-raw", alice); // alice now holds two bitbucket identities
+    seedPr(db, "bitbucket", "R", 1, svc, alice);
+    seedPr(db, "bitbucket", "R", 2, svc, alice);
+    seedApproval(db, "bitbucket", "R", 1, "bb-named", alice);
+    seedApproval(db, "bitbucket", "R", 2, "bb-raw", alice);
+    return { db, alice };
+  };
+
+  it("is refused and changes nothing", () => {
+    const { db, alice } = setup();
+    expect(() => splitPersonIdentity(db, "bitbucket", "bb-raw")).toThrow(AmbiguousSplitError);
+    expect(() => splitPersonIdentity(db, "bitbucket", "bb-named")).toThrow(AmbiguousSplitError);
+    expect(col(db, `SELECT person_id AS v FROM pull_requests`)).toEqual([alice, alice]);
+    expect(col(db, `SELECT person_id AS v FROM approvals`)).toEqual([alice, alice]);
+    expect(getPeople(db)).toHaveLength(1);
+    expect(getPeople(db)[0].identities).toHaveLength(2);
+    db.close();
+  });
+
+  it("still splits a person with one identity per provider", () => {
+    const db = freshDb();
+    const svc = upsertServiceIdentity(db, "github", "R", "R", "main", null);
+    const alice = upsertPersonIdentity(db, "bitbucket", "bb-alice", "Alice");
+    upsertPersonIdentity(db, "github", "gh-alice", "alice");
+    linkPersonIdentity(db, "github", "gh-alice", alice);
+    seedPr(db, "bitbucket", "R", 1, svc, alice);
+    seedPr(db, "github", "R", 2, svc, alice);
+
+    splitPersonIdentity(db, "github", "gh-alice");
+
+    expect(getPeople(db)).toHaveLength(2);
+    expect(col(db, `SELECT person_id AS v FROM pull_requests WHERE provider='bitbucket'`)).toEqual([alice]);
+    expect(col(db, `SELECT person_id AS v FROM pull_requests WHERE provider='github'`)).not.toEqual([alice]);
+    db.close();
+  });
+});
+
+// Failure scenario: if this is wrong, moving one of a person's two same-provider accounts
+// also drags the other account's approvals along, crediting reviews to the wrong person.
+// The approver_account_id clause is the only thing that scopes approvals correctly where
+// PR re-pointing cannot, so it needs a test of its own. linkPersonIdentity is used directly:
+// the split guard sits above relink and would otherwise stop this scenario being built.
+describe("approval re-pointing is scoped by approver account", () => {
+  it("moves only the linked identity's approvals when a person holds two on one provider", () => {
+    const db = freshDb();
+    const svc = upsertServiceIdentity(db, "bitbucket", "R", "R", "main", null);
+    const keep = upsertPersonIdentity(db, "bitbucket", "bb-named", "Alice");
+    upsertPersonIdentity(db, "bitbucket", "bb-raw", "bb-raw");
+    const target = upsertPersonIdentity(db, "bitbucket", "bb-other", "Other");
+    linkPersonIdentity(db, "bitbucket", "bb-raw", keep);
+    seedPr(db, "bitbucket", "R", 1, svc, target);
+    seedApproval(db, "bitbucket", "R", 1, "bb-named", keep);
+    seedApproval(db, "bitbucket", "R", 1, "bb-raw", keep);
+
+    linkPersonIdentity(db, "bitbucket", "bb-raw", target);
+
+    expect(col(db, `SELECT person_id AS v FROM approvals WHERE approver_account_id='bb-named'`)).toEqual([keep]);
+    expect(col(db, `SELECT person_id AS v FROM approvals WHERE approver_account_id='bb-raw'`)).toEqual([target]);
     db.close();
   });
 });

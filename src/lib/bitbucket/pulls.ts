@@ -1,5 +1,7 @@
 import { BITBUCKET_API, fetchAllPages, type FetchFn } from "./client";
 import type { PullRequestState } from "@/types";
+import { tagRepoLevel } from "@/lib/providers/repo-level";
+import { ProviderApiError } from "@/lib/providers/types";
 
 export type RawActivity = {
   approval?: { date: string; user: { account_id: string } };
@@ -111,7 +113,13 @@ export const fetchPullRequestsUpdatedSince = async (
     "values.author.account_id,values.destination.branch.name,values.links.html.href," +
     "values.participants.approved,values.participants.user.account_id,next";
   const url = `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/pullrequests?${states}&q=${q}&pagelen=50&${fields}`;
-  const raw = await fetchAllPages<RawPr>(url, auth, fetchFn);
+  let raw: RawPr[];
+  try {
+    raw = await fetchAllPages<RawPr>(url, auth, fetchFn);
+  } catch (err) {
+    // Only the FIRST request speaks for the repo; a 404 on a later page's cursor does not.
+    throw err instanceof ProviderApiError && err.url === url ? tagRepoLevel(err) : err;
+  }
   return raw.map((p) => ({
     id: p.id,
     repoSlug,

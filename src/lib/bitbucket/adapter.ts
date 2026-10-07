@@ -1,5 +1,4 @@
 import type { PullRequestProvider, FetchedPullRequest } from "@/lib/providers/types";
-import { tagRepoLevel } from "@/lib/providers/repo-level";
 import type { FetchFn } from "./client";
 import { fetchWorkspaceMembers, fetchRepos } from "./discover";
 import {
@@ -41,11 +40,12 @@ export const createBitbucketProvider = (cfg: BitbucketProviderConfig): PullReque
       })),
 
     listPullRequests: async (repo, updatedSince, detail) => {
-      // Tagged here, on the PR-list call alone: a 404 from one PR's activity feed below
-      // must never read as "this repo is gone".
+      // Repo-level tagging happens inside fetchPullRequestsUpdatedSince, on the first PR-list
+      // request alone: a 404 from one PR's activity feed below, or from a later page's
+      // cursor, must never read as "this repo is gone".
       const partials = await fetchPullRequestsUpdatedSince(
         cfg.workspace, repo.repoKey, updatedSince, cfg.auth, fetchFn,
-      ).catch((err) => { throw tagRepoLevel(err); });
+      );
       const out: FetchedPullRequest[] = [];
       for (const p of partials) {
         const { approvals: participantApprovals, id, repoSlug, ...rest } = p;

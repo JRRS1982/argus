@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { isRepoLevel } from "@/lib/providers/repo-level";
 import {
   deriveReadyForReview, extractApprovals, extractApprovalsFromParticipants,
   fetchPullRequestsUpdatedSince, type RawActivity, type RawParticipant,
@@ -81,6 +82,17 @@ describe("fetchPullRequestsUpdatedSince", () => {
     });
     const url = fetchFn.mock.calls[0][0] as string;
     expect(decodeURIComponent(url)).toContain('updated_on>="2025-12-01T00:00:00.000Z"');
+  });
+
+  it("tags only a first-page 404 as repo-level, never a later page's", async () => {
+    const later = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ values: [], next: "https://api.bitbucket.org/2.0/page2" }))
+      .mockResolvedValueOnce(new Response("", { status: 404 }));
+    const e2 = await fetchPullRequestsUpdatedSince("ws", "r", "2025-12-01T00:00:00.000Z", "a", later as unknown as typeof fetch).catch((e) => e);
+    expect(isRepoLevel(e2)).toBe(false);
+    const first = vi.fn().mockResolvedValue(new Response("", { status: 404 }));
+    const e1 = await fetchPullRequestsUpdatedSince("ws", "r", "2025-12-01T00:00:00.000Z", "a", first as unknown as typeof fetch).catch((e) => e);
+    expect(isRepoLevel(e1)).toBe(true);
   });
 
   it("requests participants and returns their approvals inline", async () => {
