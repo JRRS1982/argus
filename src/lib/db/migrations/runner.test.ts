@@ -97,4 +97,40 @@ describe("runMigrations", () => {
     expect(db.pragma("user_version", { simple: true })).toBe(2);
     db.close();
   });
+
+  it("rolls back only the migration that loses rows, keeping earlier ones", () => {
+    const db = seeded();
+    const lossy: Migration = {
+      version: 2, name: "lossy-second",
+      up: (dbh) => dbh.exec(`DELETE FROM approvals`),
+    };
+    expect(() => runMigrations(db, [addTable, lossy])).toThrow(/lossy-second/);
+    expect(db.prepare("SELECT COUNT(*) c FROM thing").get()).toEqual({ c: 0 });
+    expect(db.pragma("user_version", { simple: true })).toBe(1);
+    expect(db.prepare("SELECT COUNT(*) c FROM pull_requests").get()).toEqual({ c: 2 });
+    expect(db.prepare("SELECT COUNT(*) c FROM approvals").get()).toEqual({ c: 1 });
+    db.close();
+  });
+
+  it("snapshots before any migration runs", () => {
+    const db = seeded();
+    const calls: string[] = [];
+    runMigrations(
+      db,
+      [{ version: 1, name: "a", up: () => { calls.push("up"); } }],
+      () => { calls.push("snapshot"); },
+    );
+    expect(calls).toEqual(["snapshot", "up"]);
+    db.close();
+  });
+
+  it("aborts without migrating when the snapshot throws", () => {
+    const db = seeded();
+    const up = vi.fn();
+    const snapshot = () => { throw new Error("disk full"); };
+    expect(() => runMigrations(db, [{ ...addTable, up }], snapshot)).toThrow("disk full");
+    expect(up).not.toHaveBeenCalled();
+    expect(db.pragma("user_version", { simple: true })).toBe(0);
+    db.close();
+  });
 });

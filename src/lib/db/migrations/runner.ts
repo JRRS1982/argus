@@ -15,6 +15,9 @@ export type Snapshot = (label: string) => void;
 // has lost history, and loses the whole run rather than the rows.
 const GUARDED = ["pull_requests", "approvals"] as const;
 
+// A guarded table that does not exist before the run has no count to compare, so it
+// is skipped: a fresh database gets no row-count protection (there is nothing to
+// protect yet). A guarded table absent before the run is therefore unguarded during it.
 const tableExists = (db: Database.Database, name: string): boolean =>
   db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?`).get(name) !== undefined;
 
@@ -57,6 +60,9 @@ export const runMigrations = (
       // The value is a number from our own code, never user input.
       db.pragma(`user_version = ${migration.version}`);
 
+      // Every migration is checked against the counts taken before the whole run, so
+      // no sequence of migrations can reduce them. A failure rolls back only the
+      // migration that caused it; earlier migrations in the run stay committed.
       const after = guardedCounts(db);
       for (const [table, count] of Object.entries(before)) {
         if (after[table] !== count) {
