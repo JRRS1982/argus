@@ -72,6 +72,9 @@ export const fetchAllPages = async <T>(
   firstUrl: string,
   token: string,
   fetchFn: FetchFn = globalThis.fetch,
+  // Lets a caller whose list is sorted stop before the last page (e.g. PRs sorted by
+  // updated desc, once a page reaches data older than a cursor). Checked after each page.
+  shouldStop?: (page: T[]) => boolean,
 ): Promise<T[]> => {
   const out: T[] = [];
   const origin = new URL(firstUrl).origin;
@@ -89,8 +92,9 @@ export const fetchAllPages = async <T>(
     seen.add(next);
     const res: Response = await fetchFn(next, { headers: headers(token) });
     if (!res.ok) throw await failure(res, next);
-    out.push(...((await res.json()) as T[]));
-    next = nextLink(res);
+    const page = (await res.json()) as T[];
+    out.push(...page);
+    next = shouldStop?.(page) ? undefined : nextLink(res);
   }
   return out;
 };

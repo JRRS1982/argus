@@ -8,6 +8,7 @@ import {
 } from "@/lib/bitbucket/pulls";
 import { sixMonthsAgoIso, EPOCH_ISO } from "@/lib/window";
 import { BitbucketApiError } from "@/lib/bitbucket/client";
+import { tagRepoLevel, isRepoLevel } from "@/lib/providers/repo-level";
 
 // "deep"  — one /activity call per PR: exact ready-for-review times and the full
 //           approval history. Costs ~1 request per PR.
@@ -27,22 +28,6 @@ export type SyncDeps = {
   // backfill has run. Idempotent: everything is upserted.
   backfill?: boolean;
 };
-
-// Marks a failure as belonging to the repo itself — its PR list — rather than to one
-// PR inside it. The distinction decides whether a 404 means "this repo is gone": a
-// 404 from a single PR's activity feed (deep mode) or from a pagination cursor means
-// nothing of the sort, and must never offer to untick a healthy repo.
-const REPO_LEVEL = Symbol("repoLevelFailure");
-
-const tagRepoLevel = (err: unknown): unknown => {
-  if (typeof err === "object" && err !== null) {
-    Object.defineProperty(err, REPO_LEVEL, { value: true });
-  }
-  return err;
-};
-
-const isRepoLevel = (err: unknown): boolean =>
-  typeof err === "object" && err !== null && REPO_LEVEL in err;
 
 const PROVIDER: ProviderId = "bitbucket";
 
