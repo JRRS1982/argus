@@ -13,11 +13,11 @@ A local Next.js 16 + TypeScript dashboard that caches pull-request data from **G
 ## The four tabs
 
 - **Team** — team roster with per-user and per-repo include/exclude toggles; Discover workspace, Refresh data and Backfill all history controls, plus a warning panel naming any repository the last refresh could not read
-- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows (sorted slowest-first); flagged PRs (`*`) used creation time as fallback
+- **Review-time leaderboard** — median and average in-review duration per engineer, with Merged and Open PR counts, expandable to per-PR rows (sorted slowest-first); the `*` flag is per row, applied when that row's start time is a creation-time fallback
 - **PRs created** — matrix of PRs created, engineers (rows) × projects/repos (columns), with the row total (PR count) placed immediately beside the engineer name rather than trailing the grid, plus a Services column (distinct repos touched); repos with no in-scope PRs in the active window are omitted from the columns
 - **Approvals** — matrix of approvals, PR authors (rows) × approvers (columns): how many of each author's PRs each colleague approved (self-approvals excluded, diagonal greyed out, each row's top approver highlighted), plus a "Merged, no approval" column
 
-Engineer names are sorted alphabetically (case-insensitive) everywhere they appear — both matrices and the leaderboard, which is a record of contribution rather than a speed ranking and carries no rank column. Both matrices label their axes; each tab carries a short description above its table. A highlights strip above the tabs bookends recognition with context: it leads with a "PRs considered" count card (the PRs-created row totals — the number that visibly moves after a refresh or backfill, always shown even at 0), then calls out a few engineers by name — broadest reach, most reviews given, quickest to land — and ends with a "Data refreshed" card showing the newest sync stamp among included repos ("Never" until a first sync; demo mode shows its per-request generation instant). All of it is recomputed from whichever window and data source (real or demo) is active. A **Last 30 days / Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
+Engineer names are sorted alphabetically (case-insensitive) everywhere they appear — both matrices and the leaderboard, which is a record of contribution rather than a speed ranking and carries no rank column. Both matrices label their axes; each tab carries a short description above its table. A highlights strip above the tabs bookends recognition with context: it leads with a "PRs considered" count card (the PRs-created row totals — the number that visibly moves after a refresh or backfill, always shown even at 0), then calls out a few engineers by name — broadest reach, most reviews given, quickest to land — and ends with a "Data refreshed" card showing one line per provider: live providers first, Bitbucket's line reading `archived <date>`, and a provider with no data omitted entirely (demo mode shows a single "Demo" line). "Never" with a prompt to run Refresh data on the Team tab is only the empty state when no provider has any data at all. All of it is recomputed from whichever window and data source (real or demo) is active. A **Last 30 days / Last 6 months / All time** toggle above the tabs switches the read-time window for every tab at once.
 
 ## Key metric definitions
 
@@ -40,7 +40,7 @@ Engineer names are sorted alphabetically (case-insensitive) everywhere they appe
 | `BITBUCKET_WORKSPACE` | No | `mvfglobal` | Bitbucket workspace slug |
 | `BITBUCKET_PROJECT_KEY` | No | (all projects) | Bitbucket project key |
 | `ARGUS_DB_PATH` | No | `data/argus.sqlite` | Override SQLite cache path |
-| _(none)_ | — | — | With no provider configured at all (no `GITHUB_TOKEN` and no Bitbucket credentials), the app runs in demo mode: fabricated data, no Bitbucket calls, no SQLite access |
+| _(none)_ | — | — | With no provider configured at all (no `GITHUB_TOKEN` and no Bitbucket credentials), the app runs in demo mode: fabricated data, no provider calls, no SQLite access |
 
 Config is read from `src/config/index.ts`.
 

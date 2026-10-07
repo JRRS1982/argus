@@ -167,12 +167,12 @@ export default function TeamTab({
       ))}
 
       <p className="text-sm text-gray-600 max-w-4xl">
-        <span className="font-medium">Discover workspace</span> lists every user and repository in the Bitbucket
-        workspace and the GitHub organisation; nothing is selected to begin with. Tick the engineers and repositories you want, then
+        <span className="font-medium">Discover workspace</span> lists every member and repository in the GitHub
+        organisation; nothing is selected to begin with. Tick the engineers and repositories you want, then
         <span className="font-medium"> Refresh data</span> to pull their PR history. Only ticked repositories are
         fetched, and only ticked engineers appear in the other tabs. Refresh is incremental: it only asks
-        Bitbucket for activity since the last refresh, and a repo&apos;s very first refresh reaches back just
-        6 months. <span className="font-medium">Backfill all history</span> instead re-fetches every PR the
+        GitHub for activity since the last refresh, and a repo&apos;s very first refresh reaches back just
+        6 months. Bitbucket is a frozen archive: its history still counts in every tab but is never fetched. <span className="font-medium">Backfill all history</span> instead re-fetches every PR the
         ticked repositories have ever had — run it once if the All time view looks thin.
       </p>
 

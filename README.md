@@ -139,7 +139,7 @@ No credentials? Argus still runs. With no provider configured (no `GITHUB_TOKEN`
 
 ## Data persistence
 
-All PR data is stored in `data/argus.sqlite` at the project root. The file is created automatically on first refresh and is excluded from version control (`.gitignore`). Delete it to start from scratch.
+All PR data is stored in `data/argus.sqlite` at the project root. The file is created automatically on first refresh and is excluded from version control (`.gitignore`). Delete it only if you mean to lose the Bitbucket history: the cache holds the only copy of it, and Bitbucket is never fetched again, so a deleted cache cannot be rebuilt for those PRs (GitHub data can be re-fetched).
 
 ## Environment variables reference
 
