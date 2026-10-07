@@ -54,6 +54,26 @@ export const describeProviderContract = (
       }
     });
 
+    it("emits every normalised state, so a closed-unmerged PR is not mistaken for a merged one", async () => {
+      const states = new Set((await firstRepoPrs(factory(), "summary")).map((f) => f.pullRequest.state));
+      expect([...states].sort()).toEqual(["CLOSED", "MERGED", "OPEN"]);
+    });
+
+    it("honours updatedSince: a later cursor returns strictly fewer PRs", async () => {
+      const p = factory();
+      const repos = await p.listRepositories();
+      const ref = { repoKey: repos[0].repoKey, defaultBranch: repos[0].defaultBranch };
+      const all = await p.listPullRequests(ref, SINCE_FOREVER, "summary");
+      // A PR cannot have been updated before it was created or merged, so the earliest of
+      // those "last known" instants is a moment that PR is certain to predate. Derived from
+      // the data rather than hard-coded so it suits any provider's dates.
+      const lastKnown = all.map((f) =>
+        Math.max(Date.parse(f.pullRequest.createdOn), Date.parse(f.pullRequest.mergedOn ?? f.pullRequest.createdOn)));
+      const cursor = new Date(Math.min(...lastKnown) + 1).toISOString();
+      const later = await p.listPullRequests(ref, cursor, "summary");
+      expect(later.length).toBeLessThan(all.length);
+    });
+
     it("stamps its own id on every PR it returns", async () => {
       const p = factory();
       const fetched = await firstRepoPrs(p, "full");

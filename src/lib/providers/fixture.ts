@@ -27,9 +27,21 @@ export const createFixtureProvider = (
   const rand = mulberry32(seed);
   const accountIdOf = (personId: number): string =>
     data.people[personId - 1].identities[0].accountId;
-  const abandoned = new Set(
-    data.prs.filter((pr) => pr.state === "MERGED" && rand() < 0.15).map((pr) => `${pr.repoKey}#${pr.number}`),
-  );
+  // Every state must be present in every repo, by construction: a contract that merely
+  // hopes the seed yields a CLOSED PR cannot catch a provider that mislabels closed-but-
+  // unmerged work as MERGED. So per repo the first merged PR is forced to CLOSED and the
+  // second is reopened; the seed then abandons a further slice for variety.
+  const abandoned = new Set<string>();
+  const reopened = new Set<string>();
+  const mergedSeen = new Map<string, number>();
+  for (const pr of data.prs) {
+    if (pr.state !== "MERGED") continue;
+    const key = `${pr.repoKey}#${pr.number}`;
+    const n = (mergedSeen.get(pr.repoKey) ?? 0) + 1;
+    mergedSeen.set(pr.repoKey, n);
+    if (n === 1 || rand() < 0.15) abandoned.add(key);
+    else if (n === 2) reopened.add(key);
+  }
 
   // Fixed by construction, so a contract run is deterministic.
   const repos = data.services.map((s) => ({
@@ -54,7 +66,8 @@ export const createFixtureProvider = (
       for (const pr of data.prs) {
         if (pr.repoKey !== repo.repoKey) continue;
         const closed = abandoned.has(`${pr.repoKey}#${pr.number}`);
-        const mergedOn = closed ? null : pr.mergedOn;
+        const reopen = reopened.has(`${pr.repoKey}#${pr.number}`);
+        const mergedOn = closed || reopen ? null : pr.mergedOn;
         const updatedOn = new Date(mergedOn ?? pr.createdOn).getTime();
         if (updatedOn < since) continue;
 
@@ -66,7 +79,7 @@ export const createFixtureProvider = (
             ...rest,
             provider: FIXTURE_ID,
             authorAccountId: accountIdOf(personId),
-            state: closed ? "CLOSED" : pr.state,
+            state: closed ? "CLOSED" : reopen ? "OPEN" : pr.state,
             mergedOn,
             mergedOnPrecision: mergedOn === null ? null : "exact",
             // A summary list cannot see the draft→ready transition; per-PR detail can.
