@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "backup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/backup.mts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
