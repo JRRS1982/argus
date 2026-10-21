@@ -140,6 +140,7 @@ export const buildDemoDataset = (nowIso: string): DemoDataset => {
         number: id,
         serviceId: repoIdx + 1,
         personId: personIdOf(profile.accountId),
+        authorAccountId: profile.accountId,
         title: pick(rand, TITLES),
         state: isOpen ? "OPEN" : "MERGED",
         createdOn: new Date(createdMs).toISOString(),

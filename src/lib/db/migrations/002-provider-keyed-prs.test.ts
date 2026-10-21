@@ -29,6 +29,9 @@ const legacy = () => {
 const pr = (id: number, author = "u1", fallback = 1) =>
   `('repo-a',${id},'${author}','PR ${id}','MERGED','2026-01-01T00:00:00Z','2026-01-02T00:00:00Z',${fallback},'2026-01-05T00:00:00Z','main','https://x/${id}')`;
 
+// Derived, so a new migration does not invalidate assertions about "fully migrated".
+const LATEST = MIGRATIONS.reduce((max, m) => Math.max(max, m.version), 0);
+
 describe("migration 002 — provider-keyed PRs", () => {
   it("preserves every PR, stamped bitbucket, with canonical ids resolved", () => {
     const db = legacy();
@@ -137,7 +140,7 @@ describe("migration 002 — provider-keyed PRs", () => {
     db.exec(`INSERT INTO approvals VALUES ('repo-a',1,'u1','2026-01-03T00:00:00Z')`);
     runMigrations(db, MIGRATIONS);
     runMigrations(db, MIGRATIONS);
-    expect(db.pragma("user_version", { simple: true })).toBe(2);
+    expect(db.pragma("user_version", { simple: true })).toBe(LATEST);
     expect(db.prepare(`SELECT COUNT(*) c FROM pull_requests`).get()).toEqual({ c: 1 });
     expect(db.prepare(`SELECT title FROM pull_requests`).get()).toEqual({ title: "PR 1" });
     expect(db.prepare(`SELECT COUNT(*) c FROM legacy_pull_requests`).get()).toEqual({ c: 1 });
@@ -145,10 +148,10 @@ describe("migration 002 — provider-keyed PRs", () => {
     db.close();
   });
 
-  it("reaches version 2 on an empty database with both rebuilt tables empty", () => {
+  it("reaches the latest version on an empty database with both rebuilt tables empty", () => {
     const db = new Database(":memory:");
     runMigrations(db, MIGRATIONS);
-    expect(db.pragma("user_version", { simple: true })).toBe(2);
+    expect(db.pragma("user_version", { simple: true })).toBe(LATEST);
     expect(db.prepare(`SELECT COUNT(*) c FROM pull_requests`).get()).toEqual({ c: 0 });
     expect(db.prepare(`SELECT COUNT(*) c FROM approvals`).get()).toEqual({ c: 0 });
     db.close();

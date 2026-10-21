@@ -111,15 +111,37 @@ describe("/api/roster over canonical entities", () => {
     expect(getPeople(h.db)).toHaveLength(2);
   });
 
-  it("refuses with 400 to split a person holding two identities on one provider", async () => {
+  // The Team tab's duplicate banner pushes users into merging raw-account-id people, so
+  // the merge it recommends has to be undoable. Failure scenario: a mis-merge is permanent.
+  it("undoes a merge of two identities on one provider", async () => {
     upsertBitbucketUsers(h.db, [{ accountId: "bb1", displayName: "Alice Smith" }]);
     upsertPersonIdentity(h.db, "bitbucket", "raw-id", "raw-id");
     const alice = getPeople(h.db).find((p) => p.displayName === "Alice Smith")!;
     await patch({ kind: "person", action: "merge", provider: "bitbucket", key: "raw-id", intoId: alice.id });
+    expect(getPeople(h.db)).toHaveLength(1);
+
+    const res = await patch({ kind: "person", action: "split", provider: "bitbucket", key: "raw-id" });
+    expect(res.status).toBe(200);
+    expect(getPeople(h.db).map((p) => p.displayName).sort()).toEqual(["Alice Smith", "raw-id"]);
+  });
+
+  it("refuses with 400 to split when pull requests predate recorded authorship", async () => {
+    upsertBitbucketUsers(h.db, [{ accountId: "bb1", displayName: "Alice Smith" }]);
+    upsertPersonIdentity(h.db, "bitbucket", "raw-id", "raw-id");
+    const alice = getPeople(h.db).find((p) => p.displayName === "Alice Smith")!;
+    await patch({ kind: "person", action: "merge", provider: "bitbucket", key: "raw-id", intoId: alice.id });
+    upsertServiceIdentity(h.db, "bitbucket", "repo-a", "repo-a", "main", null);
+    h.db.prepare(
+      `INSERT INTO pull_requests (provider, repo_key, number, service_id, person_id,
+         author_account_id, title, state, created_on, ready_for_review_on,
+         ready_for_review_precision, merged_on, merged_on_precision, destination_branch, url)
+       VALUES ('bitbucket','repo-a',1,1,?,NULL,'PR','MERGED','2026-01-01T00:00:00Z',
+         '2026-01-01T00:00:00Z','fallback',NULL,NULL,'main','https://x/1')`,
+    ).run(alice.id);
 
     const res = await patch({ kind: "person", action: "split", provider: "bitbucket", key: "raw-id" });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/more than one bitbucket identity/i);
+    expect((await res.json()).error).toMatch(/before Argus recorded which account authored/i);
     expect(getPeople(h.db)).toHaveLength(1);
   });
 

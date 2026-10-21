@@ -302,6 +302,23 @@ describe("TeamTab merge control and hints", () => {
       .toEqual({ kind: "service", action: "split", provider: "github", key: "repo-a" });
   });
 
+  // Failure scenario: a person merged from two Bitbucket accounts shows two buttons both
+  // reading "split Bitbucket", so the user cannot tell which account each one detaches
+  // and picks at random.
+  it("names the account when one person holds two identities on a provider", async () => {
+    const calls = okFetch();
+    render(<TeamTab roster={{ people: [person({
+      identities: [{ provider: "bitbucket", accountId: "bb-named" }, { provider: "bitbucket", accountId: "bb-raw" }],
+    })], services: [] }} />);
+
+    expect((screen.getByRole("button", { name: "split bb-named" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "split bb-raw" }));
+
+    await waitFor(() => expect(calls.some((c) => c.init?.method === "PATCH")).toBe(true));
+    expect(JSON.parse(calls.find((c) => c.init?.method === "PATCH")!.init!.body as string))
+      .toEqual({ kind: "person", action: "split", provider: "bitbucket", key: "bb-raw" });
+  });
+
   it("flags people whose display name equals their login as possible duplicates", () => {
     render(<TeamTab roster={{ services: [], people: [
       person({ id: 1, displayName: "Alice Smith" }),

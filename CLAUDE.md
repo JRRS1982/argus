@@ -99,11 +99,15 @@ The cache lives at `data/argus.sqlite` (created automatically; git-ignored). Del
 
 Key tables: `pull_requests` (keyed by `(provider, repo_key, number)`), `approvals` (keyed by `(provider, repo_key, pr_number, approver_account_id)`), `people` / `person_identities` and `services` / `service_identities` (canonical entity, owning one or more per-provider identities; each service identity has a `state` of `active` or `archived`). The pre-migration `pull_requests`, `approvals`, `users` and `repos` tables are kept as `legacy_*` and never dropped.
 
+`pull_requests.author_account_id` records the provider account that authored each PR, alongside the canonical `person_id`. It is what makes a merge reversible: without it an un-merge cannot tell two identities of one person apart. Migration 003 backfilled it **exactly** for every Bitbucket row from the retained `legacy_pull_requests` — which is only possible while that table survives, and is the reason it must not be dropped casually. It is nullable: a row stored before the column existed stays null until its next sync, and a sync that cannot see the author never blanks an id already recorded.
+
 **Migrations** (`src/lib/db/migrations/`) are forward-only and numbered, each run in a transaction and guarded by a row-count assertion on `pull_requests` and `approvals` that rolls back on any change — cached history is irreplaceable. A verified snapshot (`VACUUM INTO` beside the cache, integrity-checked) is taken before any migration runs, and the run is refused if it cannot be written. A database whose schema is newer than the code refuses to open rather than rebuilding it.
 
 ## Adding / removing team members
 
 Use the **Team** tab checkboxes — no code changes needed. The roster auto-discovers from the GitHub org on Discover, with new arrivals excluded by default. Re-run Discover if new engineers join the org, then tick them. Merge a GitHub-only person or a renamed repo into its existing canonical entry from the same tab.
+
+**Every merge can be undone.** `split` detaches one identity again, taking that account's own pull requests and approvals with it. Where a person holds two identities on the same provider, each split button is labelled with the account rather than the provider, since the provider name alone would not say which one it detaches. The only refusal is a person whose pull requests predate `author_account_id` *and* who holds two identities on that provider: nothing on disk says which account wrote them, so the split is refused with a count rather than guessed. A GitHub refresh clears that state; Bitbucket cannot, but migration 003 left no Bitbucket row unattributed.
 
 ## Development notes
 

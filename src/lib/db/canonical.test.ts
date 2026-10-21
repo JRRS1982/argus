@@ -116,12 +116,18 @@ describe("canonical queries", () => {
   });
 });
 
-const seedPr = (db: Database.Database, provider: string, repoKey: string, n: number, serviceId: number, personId: number) =>
+// author defaults to null: that is a row stored before author_account_id existed, which
+// is exactly the case the split has to refuse rather than guess at.
+const seedPr = (
+  db: Database.Database, provider: string, repoKey: string, n: number, serviceId: number,
+  personId: number, author: string | null = null,
+) =>
   db.prepare(`
-    INSERT INTO pull_requests (provider, repo_key, number, service_id, person_id, title, state,
+    INSERT INTO pull_requests (provider, repo_key, number, service_id, person_id,
+      author_account_id, title, state,
       created_on, ready_for_review_on, ready_for_review_precision, destination_branch, url)
-    VALUES (?, ?, ?, ?, ?, 't', 'MERGED', '2026-01-01', '2026-01-01', 'exact', 'main', 'u')
-  `).run(provider, repoKey, n, serviceId, personId);
+    VALUES (?, ?, ?, ?, ?, ?, 't', 'MERGED', '2026-01-01', '2026-01-01', 'exact', 'main', 'u')
+  `).run(provider, repoKey, n, serviceId, personId, author);
 const seedApproval = (db: Database.Database, provider: string, repoKey: string, n: number, approver: string, personId: number) =>
   db.prepare(`
     INSERT INTO approvals (provider, repo_key, pr_number, approver_account_id, person_id, approved_on)
@@ -257,7 +263,7 @@ describe("splitPersonIdentity on a person with two identities on one provider", 
     return { db, alice };
   };
 
-  it("is refused and changes nothing", () => {
+  it("is refused and changes nothing when the PRs predate recorded authorship", () => {
     const { db, alice } = setup();
     expect(() => splitPersonIdentity(db, "bitbucket", "bb-raw")).toThrow(AmbiguousSplitError);
     expect(() => splitPersonIdentity(db, "bitbucket", "bb-named")).toThrow(AmbiguousSplitError);
@@ -265,6 +271,47 @@ describe("splitPersonIdentity on a person with two identities on one provider", 
     expect(col(db, `SELECT person_id AS v FROM approvals`)).toEqual([alice, alice]);
     expect(getPeople(db)).toHaveLength(1);
     expect(getPeople(db)[0].identities).toHaveLength(2);
+    db.close();
+  });
+
+  // The whole point of recording author_account_id: a mis-merge of two same-provider
+  // people is reversible, and reversing it takes each account's own PRs with it.
+  // Failure scenario: if this is wrong, undoing a merge credits one person's pull
+  // requests to the other — silently, and with no way back.
+  it("moves only the split identity's pull requests when every row names its author", () => {
+    const db = freshDb();
+    const svc = upsertServiceIdentity(db, "bitbucket", "R", "R", "main", null);
+    const alice = upsertPersonIdentity(db, "bitbucket", "bb-named", "Alice");
+    upsertPersonIdentity(db, "bitbucket", "bb-raw", "bb-raw");
+    linkPersonIdentity(db, "bitbucket", "bb-raw", alice);
+    seedPr(db, "bitbucket", "R", 1, svc, alice, "bb-named");
+    seedPr(db, "bitbucket", "R", 2, svc, alice, "bb-raw");
+    seedApproval(db, "bitbucket", "R", 1, "bb-named", alice);
+    seedApproval(db, "bitbucket", "R", 2, "bb-raw", alice);
+
+    splitPersonIdentity(db, "bitbucket", "bb-raw");
+
+    const split = getPeople(db).find((p) => p.displayName === "bb-raw")!;
+    expect(getPeople(db)).toHaveLength(2);
+    expect(split.id).not.toBe(alice);
+    expect(col(db, `SELECT person_id AS v FROM pull_requests WHERE number = 1`)).toEqual([alice]);
+    expect(col(db, `SELECT person_id AS v FROM pull_requests WHERE number = 2`)).toEqual([split.id]);
+    expect(col(db, `SELECT person_id AS v FROM approvals WHERE approver_account_id = 'bb-named'`)).toEqual([alice]);
+    expect(col(db, `SELECT person_id AS v FROM approvals WHERE approver_account_id = 'bb-raw'`)).toEqual([split.id]);
+    db.close();
+  });
+
+  // A single-identity person still moves every row on that provider, author id or not —
+  // otherwise the ordinary GitHub-to-Bitbucket merge would strand pre-column rows.
+  it("moves rows with no recorded author when the person holds one identity per provider", () => {
+    const db = freshDb();
+    const svc = upsertServiceIdentity(db, "github", "R", "R", "main", null);
+    const alice = upsertPersonIdentity(db, "bitbucket", "bb-alice", "Alice");
+    const ghAlice = upsertPersonIdentity(db, "github", "gh-alice", "alice");
+    seedPr(db, "github", "R", 1, svc, ghAlice, null);
+    linkPersonIdentity(db, "github", "gh-alice", alice);
+
+    expect(col(db, `SELECT person_id AS v FROM pull_requests`)).toEqual([alice]);
     db.close();
   });
 

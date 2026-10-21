@@ -25,7 +25,8 @@ const seed = (db: Database.Database) => {
 };
 
 const samplePr = (over: Partial<PullRequestRecord> = {}): PullRequestRecord => ({
-  provider: "bitbucket", number: 1, repoKey: "repo-a", serviceId: 1, personId: 1, title: "PR", state: "MERGED",
+  provider: "bitbucket", number: 1, repoKey: "repo-a", serviceId: 1, personId: 1,
+  authorAccountId: "acc-1", title: "PR", state: "MERGED",
   createdOn: "2026-01-01T00:00:00.000Z", readyForReviewOn: "2026-01-01T00:00:00.000Z",
   readyForReviewPrecision: "fallback", mergedOn: "2026-01-02T00:00:00.000Z",
   mergedOnPrecision: "derived", destinationBranch: "main", url: "https://x/1", ...over,

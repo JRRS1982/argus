@@ -302,19 +302,16 @@ function RosterList({
                 </select>
               )}
               {e.identities.length > 1 && e.identities.map((i) => {
-                // Two identities on one provider cannot be split safely (PRs record the person,
-                // not the account), and two identical buttons would invite a click that moves
-                // both accounts' PRs. Disabled with the reason, rather than relabelled, because
-                // the server refuses it anyway.
-                const ambiguous = kind === "person" && e.identities.filter((o) => o.provider === i.provider).length > 1;
+                // With two accounts on one provider, "split Bitbucket" would appear twice and
+                // say nothing about which one it moves. Name the account instead, so the two
+                // buttons are told apart by the only thing that distinguishes them.
+                const siblings = e.identities.filter((o) => o.provider === i.provider).length > 1;
                 return (
-                  <button key={`${i.provider}-${i.key}`} disabled={demo || ambiguous}
-                    title={readOnly ?? (ambiguous
-                      ? `Cannot split: ${e.name} has more than one ${PROVIDER_LABEL[i.provider]} account, and pull requests do not record which one authored them`
-                      : `Give ${PROVIDER_LABEL[i.provider]} ${i.key} its own entry again`)}
+                  <button key={`${i.provider}-${i.key}`} disabled={demo}
+                    title={readOnly ?? `Give ${PROVIDER_LABEL[i.provider]} ${i.key} its own entry again`}
                     onClick={() => onSplit(kind, i.provider, i.key)}
-                    className="text-xs text-gray-600 hover:underline disabled:opacity-50">
-                    split {PROVIDER_LABEL[i.provider]}
+                    className="text-xs text-gray-600 hover:underline disabled:opacity-50 max-w-48 truncate">
+                    split {siblings ? i.key : PROVIDER_LABEL[i.provider]}
                   </button>
                 );
               })}

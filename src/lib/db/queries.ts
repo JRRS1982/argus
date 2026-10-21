@@ -29,16 +29,18 @@ export const upsertBitbucketRepos = (
 export const upsertPullRequest = (db: Database.Database, pr: PullRequestRecord): void => {
   db.prepare(
     `INSERT INTO pull_requests
-       (provider, repo_key, number, service_id, person_id, title, state, created_on,
-        ready_for_review_on, ready_for_review_precision, merged_on, merged_on_precision,
-        destination_branch, url)
+       (provider, repo_key, number, service_id, person_id, author_account_id, title, state,
+        created_on, ready_for_review_on, ready_for_review_precision, merged_on,
+        merged_on_precision, destination_branch, url)
      VALUES
-       (@provider, @repoKey, @number, @serviceId, @personId, @title, @state, @createdOn,
-        @readyForReviewOn, @readyForReviewPrecision, @mergedOn, @mergedOnPrecision,
-        @destinationBranch, @url)
+       (@provider, @repoKey, @number, @serviceId, @personId, @authorAccountId, @title, @state,
+        @createdOn, @readyForReviewOn, @readyForReviewPrecision, @mergedOn,
+        @mergedOnPrecision, @destinationBranch, @url)
      ON CONFLICT(provider, repo_key, number) DO UPDATE SET
        service_id = excluded.service_id,
        person_id = excluded.person_id,
+       -- Never let a re-sync that cannot see the author blank an id already recorded.
+       author_account_id = COALESCE(excluded.author_account_id, pull_requests.author_account_id),
        title = excluded.title,
        state = excluded.state,
        created_on = excluded.created_on,
@@ -92,14 +94,15 @@ export const replaceApprovals = (
 
 type PrRow = {
   provider: string; repo_key: string; number: number; service_id: number; person_id: number;
-  title: string; state: string; created_on: string; ready_for_review_on: string;
+  author_account_id: string | null; title: string; state: string; created_on: string; ready_for_review_on: string;
   ready_for_review_precision: string; merged_on: string | null; merged_on_precision: string | null;
   destination_branch: string; url: string;
 };
 export const getPullRequests = (db: Database.Database): PullRequestRecord[] =>
-  (db.prepare(`SELECT provider, repo_key, number, service_id, person_id, title, state, created_on, ready_for_review_on, ready_for_review_precision, merged_on, merged_on_precision, destination_branch, url FROM pull_requests`).all() as PrRow[]).map((r) => ({
+  (db.prepare(`SELECT provider, repo_key, number, service_id, person_id, author_account_id, title, state, created_on, ready_for_review_on, ready_for_review_precision, merged_on, merged_on_precision, destination_branch, url FROM pull_requests`).all() as PrRow[]).map((r) => ({
     provider: r.provider as ProviderId, repoKey: r.repo_key, number: r.number,
-    serviceId: r.service_id, personId: r.person_id, title: r.title,
+    serviceId: r.service_id, personId: r.person_id,
+    authorAccountId: r.author_account_id, title: r.title,
     // Rows migrated from before CLOSED existed still say DECLINED/SUPERSEDED; both
     // always meant abandoned, so they read back as CLOSED rather than as unknown states.
     state: (r.state === "OPEN" || r.state === "MERGED" ? r.state : "CLOSED") as PullRequestState,

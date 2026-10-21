@@ -147,6 +147,11 @@ const relink = (
     const wasIncluded = db.prepare(`SELECT included FROM ${entityTable} WHERE id = ?`).get(row.id) as { included: number };
     if (wasIncluded.included) db.prepare(`UPDATE ${entityTable} SET included = 1 WHERE id = ?`).run(intoId);
 
+    // Counted before the identity moves, while the entity still holds it.
+    const siblingsOnProvider = (db.prepare(
+      `SELECT COUNT(*) AS c FROM ${identityTable} WHERE ${idColumn} = ? AND provider = ?`,
+    ).get(row.id, provider) as { c: number }).c;
+
     db.prepare(
       `UPDATE ${identityTable} SET ${idColumn} = ? WHERE provider = ? AND ${keyColumn} = ?`,
     ).run(intoId, provider, key);
@@ -156,10 +161,20 @@ const relink = (
       db.prepare(
         `UPDATE pull_requests SET service_id = ? WHERE service_id = ? AND provider = ? AND repo_key = ?`,
       ).run(intoId, row.id, provider, key);
+    } else if (siblingsOnProvider > 1) {
+      // Two identities of one person on one provider: only author_account_id separates
+      // their pull requests. A row that predates that column stays with the old person
+      // rather than moving on a guess — splitPersonIdentity refuses the split outright
+      // when any such row exists, so this branch never silently strands attributable work.
+      db.prepare(
+        `UPDATE pull_requests SET person_id = ? WHERE person_id = ? AND provider = ? AND author_account_id = ?`,
+      ).run(intoId, row.id, provider, key);
+      db.prepare(
+        `UPDATE approvals SET person_id = ? WHERE person_id = ? AND provider = ? AND approver_account_id = ?`,
+      ).run(intoId, row.id, provider, key);
     } else {
-      // pull_requests has no author-account column, so (provider, person_id) is the
-      // tightest scope available. Residual: a person holding two identities on the
-      // same provider cannot be told apart, so such a move is bounded to that provider.
+      // The only identity of this person on this provider, so every one of their PRs here
+      // is this identity's — including rows stored before author_account_id existed.
       db.prepare(
         `UPDATE pull_requests SET person_id = ? WHERE person_id = ? AND provider = ?`,
       ).run(intoId, row.id, provider);
@@ -189,19 +204,25 @@ export const linkServiceIdentity = (
 // own again, excluded like any new arrival and named by the provider's own key. A no-op
 // for an identity that already stands alone, so a double click cannot mint a duplicate.
 //
-// Refuses when the person holds more than one identity on this provider. pull_requests has
-// no author-account column, so relink can only re-point PRs by (provider, person): with two
-// identities on one provider it would drag BOTH identities' PRs onto the new entity while
-// moving only one identity's approvals. Migration 001 names raw-account-id people and the
-// Team tab recommends merging them into the named person, so this state is reachable.
+// Two identities of one person on one provider are separable because pull_requests records
+// author_account_id. It refuses only for rows that predate that column, where nothing on
+// disk says which of the two accounts authored them: moving them would be a guess, and
+// leaving them behind would silently strand work on the wrong person.
 export class AmbiguousSplitError extends Error {
-  constructor(provider: ProviderId, accountId: string) {
+  readonly unattributed: number;
+
+  constructor(provider: ProviderId, accountId: string, unattributed: number) {
+    const remedy = provider === "bitbucket"
+      ? "Bitbucket is an archive and cannot be re-fetched, so this split cannot be completed."
+      : `Run Refresh data to record the author of each one, then split again.`;
     super(
-      `Cannot split ${provider} account "${accountId}": this person has more than one ${provider} ` +
-      `identity, and pull requests record only the person, not which account authored them, so ` +
-      `the split would move every one of their ${provider} pull requests. Nothing was changed.`,
+      `Cannot split ${provider} account "${accountId}": ${unattributed} of this person's ` +
+      `${provider} pull requests were stored before Argus recorded which account authored ` +
+      `them, and this person has more than one ${provider} identity, so there is no way to ` +
+      `tell which of them to move. ${remedy} Nothing was changed.`,
     );
     this.name = "AmbiguousSplitError";
+    this.unattributed = unattributed;
   }
 }
 
@@ -216,7 +237,13 @@ export const splitPersonIdentity = (db: Database.Database, provider: ProviderId,
     const sameProvider = db.prepare(
       `SELECT COUNT(*) AS c FROM person_identities WHERE person_id = ? AND provider = ?`,
     ).get(row.id, provider) as { c: number };
-    if (sameProvider.c > 1) throw new AmbiguousSplitError(provider, accountId);
+    if (sameProvider.c > 1) {
+      const unattributed = db.prepare(
+        `SELECT COUNT(*) AS c FROM pull_requests
+         WHERE person_id = ? AND provider = ? AND author_account_id IS NULL`,
+      ).get(row.id, provider) as { c: number };
+      if (unattributed.c > 0) throw new AmbiguousSplitError(provider, accountId, unattributed.c);
+    }
     const { lastInsertRowid } = db.prepare(`INSERT INTO people (display_name, included) VALUES (?, 0)`).run(accountId);
     linkPersonIdentity(db, provider, accountId, Number(lastInsertRowid));
   })();

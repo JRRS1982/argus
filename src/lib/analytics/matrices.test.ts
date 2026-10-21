@@ -15,7 +15,8 @@ const repos: Service[] = [
 const SINCE = "2026-01-01T00:00:00.000Z";
 
 const pr = (over: Partial<PullRequestRecord>): PullRequestRecord => ({
-  provider: "bitbucket", number: 1, repoKey: "repo-a", serviceId: 1, personId: 1, title: "T", state: "MERGED",
+  provider: "bitbucket", number: 1, repoKey: "repo-a", serviceId: 1, personId: 1,
+  authorAccountId: "acc-1", title: "T", state: "MERGED",
   createdOn: "2026-02-01T00:00:00.000Z", readyForReviewOn: "2026-02-01T00:00:00.000Z",
   readyForReviewPrecision: "derived", mergedOn: "2026-02-02T00:00:00.000Z",
   mergedOnPrecision: "derived", destinationBranch: "main", url: "https://x/1", ...over,

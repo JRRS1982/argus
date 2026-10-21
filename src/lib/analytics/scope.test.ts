@@ -13,6 +13,7 @@ const service = (over: Partial<Service> = {}): Service => ({
 
 const pr = (over: Partial<PullRequestRecord> = {}): PullRequestRecord => ({
   provider: "bitbucket", repoKey: "repo-a", number: 1, serviceId: 1, personId: 1,
+  authorAccountId: "acc-1",
   title: "PR", state: "MERGED", createdOn: "2026-01-01T00:00:00Z",
   readyForReviewOn: "2026-01-01T00:00:00Z", readyForReviewPrecision: "fallback",
   mergedOn: "2026-01-02T00:00:00Z", mergedOnPrecision: "derived",

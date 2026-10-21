@@ -11,6 +11,10 @@ export type PullRequestRecord = {
   number: number;          // unique only within its repo
   serviceId: number;       // canonical service the repo belongs to
   personId: number;        // canonical person who authored it
+  // The provider's own account id for the author. Null only for rows stored before the
+  // column existed and never re-synced; it is what lets an un-merge tell two identities
+  // of the same person apart, which the canonical person id alone cannot.
+  authorAccountId: string | null;
   title: string;
   state: PullRequestState;
   createdOn: string;       // ISO

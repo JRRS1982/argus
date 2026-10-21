@@ -74,9 +74,11 @@ const syncIdentity = async (
   const serviceId = resolveServiceId(deps.db, providerId, repoKey);
 
   for (const { pullRequest, approvals, approvalsAreComplete } of fetched) {
-    const { authorAccountId, ...fields } = pullRequest;
+    const { authorAccountId } = pullRequest;
+    // authorAccountId is kept on the record, not stripped: it is the only thing that can
+    // tell two identities of one canonical person apart when a merge has to be undone.
     const pr: PullRequestRecord = {
-      ...fields, serviceId, personId: resolvePersonId(deps.db, providerId, authorAccountId),
+      ...pullRequest, serviceId, personId: resolvePersonId(deps.db, providerId, authorAccountId),
     };
     upsertPullRequest(deps.db, pr);
     const records: ApprovalRecord[] = approvals.map((a) => ({
