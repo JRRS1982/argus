@@ -125,6 +125,36 @@ cleanly, keeps everything that completed, and says it stopped early; click Backf
 expected, not a fault. (One known limitation: a single repo whose full fetch exceeds one run's budget would
 never complete, because a repo is saved only once it has been fully fetched. Not reachable at this data size.)
 
+## Backing up the cache
+
+The cache at `data/argus.sqlite` holds the **only copy of the Bitbucket history** — 7,603 pull
+requests reaching back to 2016, from a provider that is no longer fetchable. Nothing can rebuild it.
+
+```bash
+npm run backup
+```
+
+Writes a verified copy to `~/argus-backups/` (override with `ARGUS_BACKUP_DIR`). Run it before
+anything that touches the database, and on whatever schedule suits you.
+
+It does not simply copy the file, because two things make that unsafe:
+
+- **The write-ahead log.** Recent writes live in `data/argus.sqlite-wal` until a checkpoint, so
+  copying the `.sqlite` file alone can silently produce a database missing everything written since
+  the last one. `VACUUM INTO` reads through the WAL and writes one consistent file.
+- **An unverified copy.** A file nobody opened is a file nobody knows is readable. Each backup is
+  reopened, integrity-checked, and every table's row count and the schema version compared against
+  the source before it counts as a backup. It never overwrites an existing one.
+
+Two things to know:
+
+- **Backups default to outside the repository.** `data/` is git-ignored, so `git clean -fdx` in this
+  working tree deletes the cache — and would delete any backup kept beside it in the same sweep.
+- **Never commit the database.** This repository is public; the cache holds internal repository
+  names, account identifiers and pull request titles. `.gitignore` covers `*.sqlite` and `data/`,
+  and that is deliberate. Copy backups somewhere off this machine instead — a backup on the same
+  disk as the original protects against mistakes, not against losing the disk.
+
 ## Migrating an existing cache
 
 Opening a database from before dual-provider support runs forward-only numbered migrations automatically. A
