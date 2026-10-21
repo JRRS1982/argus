@@ -344,4 +344,21 @@ describe("TeamTab merge control and hints", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
     await waitFor(() => expect(screen.getByText(/Stopped early — GitHub rate limit reached\. Everything that finished is saved; run it again to continue\./)).toBeTruthy());
   });
+
+  // Failure scenario: the user cannot tell what a refresh cost them, so they find out by
+  // having their own `gh` command rejected.
+  it("reports how much GitHub quota the refresh left behind", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve(url === "/api/sync"
+        ? {
+            totalPrs: 10, repos: [{}], skipped: [], stoppedEarly: null,
+            rateLimit: { limit: 5000, remaining: 3412, resetAt: null, spent: 1588 },
+          }
+        : { people: [], services: [] }),
+    } as Response)));
+    render(<TeamTab roster={{ people: [], services: [] }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh data" }));
+    await waitFor(() => expect(screen.getByText(/3,412 GitHub requests left of 5,000\./)).toBeTruthy());
+  });
 });

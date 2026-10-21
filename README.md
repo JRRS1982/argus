@@ -114,11 +114,16 @@ Open [http://localhost:3000](http://localhost:3000).
 After the first full refresh, subsequent refreshes are incremental. A repo's very first refresh only reaches
 back 6 months, so the **All time** view is incomplete until you click **Backfill all history**.
 
-**The first backfill takes two runs.** It costs roughly 6,000 GitHub requests against a 5,000/hour limit. When
-the limit is hit the run stops cleanly, keeps everything that completed, and reports that it stopped early;
-click Backfill again after the limit resets and it finishes. This is expected, not a fault. (One known
-limitation: a single repo whose full fetch exceeds an hour's budget would never complete, because a repo is
-saved only once it has been fully fetched. Not reachable at this data size.)
+**Argus will not spend your whole GitHub quota.** It uses the same token you do, so every refresh is bounded:
+it stops while 1,000 requests are still free for your own use, spends at most 3,000 in any one run, and paces
+what it sends. A refresh reports how much quota is left when it finishes, and refuses to start at all if the
+allowance is already down to the reserve, telling you when it resets. Tune it with `GITHUB_RATE_LIMIT_RESERVE`,
+`GITHUB_MAX_REQUESTS_PER_RUN` and `GITHUB_MIN_REQUEST_INTERVAL_MS`.
+
+**The first backfill therefore takes several runs.** It costs roughly 6,000 GitHub requests. Each run stops
+cleanly, keeps everything that completed, and says it stopped early; click Backfill again to carry on. This is
+expected, not a fault. (One known limitation: a single repo whose full fetch exceeds one run's budget would
+never complete, because a repo is saved only once it has been fully fetched. Not reachable at this data size.)
 
 ## Migrating an existing cache
 

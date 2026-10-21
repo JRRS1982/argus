@@ -87,7 +87,12 @@ export default function TeamTab({
           // is saved, and running it again carries on from there.
           + (json.stoppedEarly
             ? ` Stopped early — ${json.stoppedEarly.reason} Everything that finished is saved; run it again to continue.`
-            : json.skipped?.length ? ` ${json.skipped.length} skipped.` : ""));
+            : json.skipped?.length ? ` ${json.skipped.length} skipped.` : "")
+          // What the run cost, so the user can see their own GitHub quota is intact
+          // rather than inferring it from whether their next `gh` command works.
+          + (typeof json.rateLimit?.remaining === "number"
+            ? ` ${json.rateLimit.remaining.toLocaleString()} GitHub requests left of ${(json.rateLimit.limit ?? 0).toLocaleString()}.`
+            : ""));
       await reloadRoster();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");

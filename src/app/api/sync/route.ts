@@ -5,6 +5,9 @@ import { getSyncableIdentities } from "@/lib/db/canonical";
 import { createConfiguredRegistry } from "@/lib/providers/configured";
 import { syncAll, type SyncDeps } from "@/lib/sync/sync";
 import { isDemoRequest } from "@/lib/demo/request";
+import {
+  createRateLimitGovernor, fetchRateLimit, describeExhausted,
+} from "@/lib/github/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -36,7 +39,15 @@ export async function POST(req: NextRequest) {
     }
 
     const db = getDb();
-    const registry = createConfiguredRegistry(config);
+    // Argus shares the user's GitHub token, so the run is bounded before it starts:
+    // it leaves `githubReserve` requests untouched, spends at most
+    // `githubMaxRequestsPerRun`, and paces what it does send.
+    const governor = createRateLimitGovernor({
+      reserve: config.githubReserve,
+      maxRequestsPerRun: config.githubMaxRequestsPerRun,
+      minIntervalMs: config.githubMinRequestIntervalMs,
+    });
+    const registry = createConfiguredRegistry(config, process.env, governor.wrap);
     const providers = Object.fromEntries(registry.all().map((p) => [p.id, p]));
     const identities = getSyncableIdentities(db);
     // Archived identities (all of Bitbucket) are never fetched, and an identity whose
@@ -49,6 +60,23 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    // /rate_limit is free, so asking first costs nothing and turns "every repo failed"
+    // into a plain answer about quota. A preflight that itself fails is not fatal: the
+    // first real response reports the same figures, and sync explains any credential
+    // problem better than this would.
+    if (config.githubToken && fetchable.some((i) => i.provider === "github")) {
+      const status = await fetchRateLimit(config.githubToken).catch(() => null);
+      if (status) {
+        governor.seed(status);
+        if (status.remaining !== null && status.remaining <= config.githubReserve) {
+          return NextResponse.json(
+            { error: describeExhausted(status, config.githubReserve), rateLimit: governor.status() },
+            { status: 429 },
+          );
+        }
+      }
+    }
+
     // Unconfigured providers drop out here; archived identities stay in so sync can
     // tell whether a skipped repo's service is entirely gone.
     const deps: SyncDeps = {
@@ -69,7 +97,7 @@ export async function POST(req: NextRequest) {
     if (summary.repos.length === 0) {
       return NextResponse.json(
         {
-          ...summary, mode, backfill: backfill ?? false,
+          ...summary, mode, backfill: backfill ?? false, rateLimit: governor.status(),
           error: `None of the ${fetchable.length} selected repositories could be refreshed. `
             + `${summary.skipped[0]?.repoKey ?? "no repository"}: `
             + `${summary.skipped[0]?.reason ?? "no reason reported"}`,
@@ -77,7 +105,9 @@ export async function POST(req: NextRequest) {
         { status: 502 },
       );
     }
-    return NextResponse.json({ ...summary, mode, backfill: backfill ?? false });
+    return NextResponse.json({
+      ...summary, mode, backfill: backfill ?? false, rateLimit: governor.status(),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
