@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/config";
 import { getDb } from "@/lib/db";
-import { upsertUsers, upsertRepos } from "@/lib/db/queries";
-import { getAuthHeader } from "@/lib/bitbucket/client";
-import { fetchWorkspaceMembers, fetchRepos } from "@/lib/bitbucket/discover";
 import { isDemoRequest } from "@/lib/demo/request";
+import { createGitHubProvider } from "@/lib/github/adapter";
+import { discoverProvider } from "@/lib/discovery/discover";
+import { createRateLimitGovernor } from "@/lib/github/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -18,15 +18,31 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const auth = getAuthHeader();
-    const [members, repos] = await Promise.all([
-      fetchWorkspaceMembers(config.workspace, auth),
-      fetchRepos(config.workspace, config.projectKey, auth),
-    ]);
+    // Bitbucket is a frozen archive: migration 001 already holds every one of its
+    // repos and people, so re-discovering it can add nothing — and needing Bitbucket
+    // credentials here would fail Discover before GitHub is ever reached.
+    if (!config.githubToken) {
+      return NextResponse.json(
+        { error: "Nothing to discover: set GITHUB_TOKEN. Bitbucket is a read-only archive and is not re-discovered." },
+        { status: 400 },
+      );
+    }
     const db = getDb();
-    upsertUsers(db, members);
-    upsertRepos(db, repos);
-    return NextResponse.json({ users: members.length, repos: repos.length });
+    // Discover costs only a handful of requests, but it is spent from the same shared
+    // allowance as everything else, so it answers to the same reserve: no path through
+    // Argus may drive the user's quota below what is held back for them.
+    const governor = createRateLimitGovernor({
+      reserve: config.githubReserve,
+      maxRequestsPerRun: config.githubMaxRequestsPerRun,
+      minIntervalMs: config.githubMinRequestIntervalMs,
+    });
+    const provider = createGitHubProvider(
+      config.githubOrg, config.githubToken, governor.wrap(globalThis.fetch),
+    );
+    const github = await discoverProvider(db, provider);
+    return NextResponse.json({
+      users: github.people, repos: github.repos, github, rateLimit: governor.status(),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

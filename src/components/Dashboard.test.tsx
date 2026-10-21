@@ -13,7 +13,7 @@ afterEach(() => {
 // Regression coverage for CRITICAL 1: a non-ok response from /api/insights or
 // /api/roster still resolves its body to JSON (an `{ error }` object), which used to
 // get stored as if it were real data and then crash the first thing that read a
-// field off it (formatWindowLabel, computeHighlights, roster.users.map). The fix
+// field off it (formatWindowLabel, computeHighlights, roster.people.map). The fix
 // gates both fetches on `r.ok` before touching state at all.
 describe("Dashboard", () => {
   it("survives a failed /api/insights fetch (e.g. demo-off hitting a read-only filesystem) without crashing", async () => {
@@ -28,7 +28,7 @@ describe("Dashboard", () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ users: [], repos: [] }),
+          json: () => Promise.resolve({ people: [], services: [] }),
         } as Response);
       }),
     );
@@ -46,9 +46,9 @@ describe("Dashboard", () => {
   });
 
   it.each([
-    ["a refreshed cache", "2026-08-12T09:30:00.000Z", /12 Aug 2026/],
-    ["a never-synced cache", null, /run Refresh data on the Team tab/],
-  ])("shows the last-refreshed card for %s", async (_name, lastRefreshedAt, expected) => {
+    ["a refreshed cache", [{ provider: "github", lastSyncedOn: "2026-08-12T09:30:00.000Z", archived: false }], /12 Aug 2026/],
+    ["a never-synced cache", [], /run Refresh data on the Team tab/],
+  ])("shows the last-refreshed card for %s", async (_name, refreshedAt, expected) => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
@@ -56,11 +56,11 @@ describe("Dashboard", () => {
           const insights = {
             leaderboard: [], prsCreated: EMPTY_MATRIX, approvals: EMPTY_MATRIX,
             window: "6m", sinceIso: "2026-02-13T00:00:00.000Z", generatedAt: "2026-08-13T00:00:00.000Z",
-            lastRefreshedAt,
+            refreshedAt,
           };
           return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
@@ -78,7 +78,7 @@ describe("Dashboard", () => {
           const insights = {
             leaderboard: [],
             prsCreated: {
-              rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+              rowUsers: [{ personId: 1, displayName: "Ana" }, { personId: 2, displayName: "Ben" }],
               colHeaders: [{ key: "r1", label: "r1" }],
               cells: [[1200], [34]],
               rowTotals: [1200, 34],
@@ -86,11 +86,11 @@ describe("Dashboard", () => {
             },
             approvals: EMPTY_MATRIX,
             window: "6m", sinceIso: "2026-02-13T00:00:00.000Z", generatedAt: "2026-08-13T00:00:00.000Z",
-            lastRefreshedAt: "2026-08-12T09:30:00.000Z",
+            refreshedAt: [{ provider: "github", lastSyncedOn: "2026-08-12T09:30:00.000Z", archived: false }],
           };
           return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
         }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ users: [], repos: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ people: [], services: [] }) } as Response);
       }),
     );
 
@@ -116,7 +116,7 @@ describe("Dashboard", () => {
         }
         const insights = {
           leaderboard: [], prsCreated: EMPTY_MATRIX, approvals: EMPTY_MATRIX,
-          window: "6m", sinceIso: "2026-01-29T00:00:00.000Z", generatedAt: "2026-07-29T00:00:00.000Z",
+          window: "6m", sinceIso: "2026-01-29T00:00:00.000Z", generatedAt: "2026-07-29T00:00:00.000Z", refreshedAt: [],
         };
         return Promise.resolve({ ok: true, json: () => Promise.resolve(insights) } as Response);
       }),
@@ -126,7 +126,7 @@ describe("Dashboard", () => {
 
     await waitFor(() => expect(rosterCalls).toBeGreaterThan(0));
 
-    // roster.users stayed an array ([], the initial state) rather than becoming
+    // roster.people stayed an array ([], the initial state) rather than becoming
     // `{ error: "boom" }`, which would have thrown inside TeamTab's `.map`.
     expect(screen.getByText("No users yet — run Discover.")).toBeTruthy();
   });

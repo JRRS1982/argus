@@ -1,99 +1,115 @@
 import type Database from "better-sqlite3";
-import type { PullRequestRecord, SkippedRepo } from "@/types";
+import type {
+  ApprovalRecord, IdentityState, ProviderId, PullRequestRecord, SkippedRepo,
+} from "@/types";
 import { upsertPullRequest, replaceApprovals, mergeApprovals, getLastSynced, setLastSynced } from "@/lib/db/queries";
-import {
-  deriveReadyForReview, extractApprovals,
-  fetchPullRequestsUpdatedSince, fetchPullRequestActivity,
-} from "@/lib/bitbucket/pulls";
+import { resolvePersonId, resolveServiceId } from "@/lib/db/canonical";
 import { sixMonthsAgoIso, EPOCH_ISO } from "@/lib/window";
-import { BitbucketApiError } from "@/lib/bitbucket/client";
-
-// "deep"  — one /activity call per PR: exact ready-for-review times and the full
-//           approval history. Costs ~1 request per PR.
-// "fast"  — list calls only: approvals come from participants[], and every PR's
-//           review time falls back to createdOn. Costs ~1 request per 50 PRs.
-export type SyncMode = "fast" | "deep";
+import {
+  ProviderApiError, type DetailLevel, type PullRequestProvider,
+} from "@/lib/providers/types";
+import { isRepoLevel } from "@/lib/providers/repo-level";
 
 export type SyncDeps = {
   db: Database.Database;
-  workspace: string;
-  auth: string;
-  fetchPRs: typeof fetchPullRequestsUpdatedSince;
-  fetchActivity: typeof fetchPullRequestActivity;
-  mode?: SyncMode;
+  providers: Partial<Record<ProviderId, PullRequestProvider>>;
   // Ignore the incremental cursor and fetch every PR the repo has ever had. A normal
   // first sync only reaches back 6 months, so "All time" is incomplete until a
   // backfill has run. Idempotent: everything is upserted.
   backfill?: boolean;
+  // Detail for providers whose summary is genuinely cheaper and sufficient. See detailFor.
+  detail?: DetailLevel;
 };
 
-// Marks a failure as belonging to the repo itself — its PR list — rather than to one
-// PR inside it. The distinction decides whether a 404 means "this repo is gone": a
-// 404 from a single PR's activity feed (deep mode) or from a pagination cursor means
-// nothing of the sort, and must never offer to untick a healthy repo.
-const REPO_LEVEL = Symbol("repoLevelFailure");
-
-const tagRepoLevel = (err: unknown): unknown => {
-  if (typeof err === "object" && err !== null) {
-    Object.defineProperty(err, REPO_LEVEL, { value: true });
-  }
-  return err;
+export type SyncableIdentity = {
+  provider: ProviderId;
+  repoKey: string;
+  serviceId: number;
+  defaultBranch: string;
+  state: IdentityState;
 };
 
-const isRepoLevel = (err: unknown): boolean =>
-  typeof err === "object" && err !== null && REPO_LEVEL in err;
+export type SyncedRepo = { provider: ProviderId; repoKey: string; prCount: number };
 
-export const syncRepo = async (
-  deps: SyncDeps,
-  repoSlug: string,
-  nowIso: string,
-): Promise<{ repoSlug: string; prCount: number }> => {
+// Present when the run aborted on a credential or rate-limit failure rather than
+// finishing. A large GitHub backfill is expected to hit this: what completed is saved
+// (each identity has its own cursor) and running again carries on.
+export type StoppedEarly = { provider: ProviderId; status: number; reason: string };
+
+export type SyncSummary = {
+  repos: SyncedRepo[];
+  skipped: SkippedRepo[];
+  totalPrs: number;
+  stoppedEarly: StoppedEarly | null;
+};
+
+// GitHub's PR list carries no review data at all, so a summary fetch yields no approvals
+// and an incremental run on summary would leave the Approvals tab permanently short.
+// An incremental run touches few PRs, so full detail (timeline + reviews, two requests
+// per PR) is cheap there; it is only a backfill that is expensive, and that must be full
+// anyway. Bitbucket's participants[] does carry approvals, so it may use the cheap path
+// on incremental runs.
+const detailFor = (provider: PullRequestProvider, deps: SyncDeps): DetailLevel => {
+  if (provider.id === "github" || deps.backfill) return "full";
+  return deps.detail ?? "summary";
+};
+
+const syncIdentity = async (
+  deps: SyncDeps, identity: SyncableIdentity, nowIso: string,
+): Promise<SyncedRepo> => {
+  const { provider: providerId, repoKey } = identity;
+  const provider = deps.providers[providerId];
+  if (!provider) throw new Error(`${providerId} is not configured.`);
+
   const since = deps.backfill
     ? EPOCH_ISO
-    : getLastSynced(deps.db, repoSlug) ?? sixMonthsAgoIso(nowIso);
-  let partials;
-  try {
-    partials = await deps.fetchPRs(deps.workspace, repoSlug, since, deps.auth);
-  } catch (err) {
-    throw tagRepoLevel(err);
-  }
-  const mode = deps.mode ?? "deep";
+    : getLastSynced(deps.db, providerId, repoKey) ?? sixMonthsAgoIso(nowIso);
 
-  for (const partial of partials) {
-    // `approvals` must not reach upsertPullRequest — better-sqlite3 rejects
-    // named parameters that the statement does not declare.
-    const { approvals: participantApprovals, ...prFields } = partial;
+  // The adapter, not sync, tags its own PR-list failure as repo-level: only it knows
+  // which of its calls were the list and which were per-PR timeline/review fetches.
+  const fetched = await provider.listPullRequests(
+    { repoKey, defaultBranch: identity.defaultBranch }, since, detailFor(provider, deps),
+  );
+  // Registered only once the repo has answered, so a repo that 404s leaves no trace.
+  const serviceId = resolveServiceId(deps.db, providerId, repoKey);
 
-    if (mode === "fast") {
-      const pr: PullRequestRecord = {
-        ...prFields, readyForReviewOn: prFields.createdOn, readyIsFallback: true,
-      };
-      upsertPullRequest(deps.db, pr);
-      mergeApprovals(deps.db, participantApprovals);
-      continue;
-    }
-    const activity = await deps.fetchActivity(deps.workspace, repoSlug, partial.id, deps.auth);
-    const { readyForReviewOn, readyIsFallback } = deriveReadyForReview(prFields.createdOn, activity);
-    const pr: PullRequestRecord = { ...prFields, readyForReviewOn, readyIsFallback };
+  for (const { pullRequest, approvals, approvalsAreComplete } of fetched) {
+    const { authorAccountId } = pullRequest;
+    // authorAccountId is kept on the record, not stripped: it is the only thing that can
+    // tell two identities of one canonical person apart when a merge has to be undone.
+    const pr: PullRequestRecord = {
+      ...pullRequest, serviceId, personId: resolvePersonId(deps.db, providerId, authorAccountId),
+    };
     upsertPullRequest(deps.db, pr);
-    replaceApprovals(deps.db, repoSlug, partial.id, extractApprovals(repoSlug, partial.id, activity));
+    const records: ApprovalRecord[] = approvals.map((a) => ({
+      ...a, personId: resolvePersonId(deps.db, providerId, a.approverAccountId),
+    }));
+    // Complete history replaces (so a withdrawn approval disappears); a summary list
+    // cannot see withdrawals, so it may only add.
+    if (approvalsAreComplete) replaceApprovals(deps.db, providerId, repoKey, pr.number, records);
+    else mergeApprovals(deps.db, records);
   }
 
-  setLastSynced(deps.db, repoSlug, nowIso);
-  return { repoSlug, prCount: partials.length };
+  setLastSynced(deps.db, providerId, repoKey, nowIso);
+  return { provider: providerId, repoKey, prCount: fetched.length };
 };
 
-const toSkipped = (repoSlug: string, err: unknown): SkippedRepo => {
-  const status = err instanceof BitbucketApiError ? err.status : null;
-  if (err instanceof BitbucketApiError) {
+const toSkipped = (identity: SyncableIdentity, err: unknown): SkippedRepo => {
+  // ProviderApiError, not BitbucketApiError: narrowing on one provider's subclass
+  // would give every other provider status null, so isRunWide() could never fire and
+  // none of their rate-limit handling would take effect.
+  const status = err instanceof ProviderApiError ? err.status : null;
+  const label = `${identity.provider}/${identity.repoKey}`;
+  if (err instanceof ProviderApiError) {
     // The only record of which URL was actually refused. Without it a typo'd
     // workspace slug and a genuinely deleted repo produce identical output.
-    console.error(`[sync] ${repoSlug}: ${err.status} ${err.statusText} — ${err.url}`);
+    console.error(`[sync] ${label}: ${err.status} ${err.statusText} — ${err.url}`);
   } else {
-    console.error(`[sync] ${repoSlug}:`, err);
+    console.error(`[sync] ${label}:`, err);
   }
   return {
-    repoSlug,
+    provider: identity.provider,
+    repoKey: identity.repoKey,
     reason: err instanceof Error ? err.message : "Unknown error",
     status,
     missing: status === 404 && isRepoLevel(err),
@@ -106,39 +122,63 @@ const toSkipped = (repoSlug: string, err: unknown): SkippedRepo => {
 // block it is already subject to. Stop, and report the rest as not attempted.
 const isRunWide = (status: number | null): boolean => status === 401 || status === 429;
 
-const notAttempted = (repoSlug: string): SkippedRepo => ({
-  repoSlug,
+const notAttempted = (identity: SyncableIdentity): SkippedRepo => ({
+  provider: identity.provider,
+  repoKey: identity.repoKey,
   reason: "Not attempted — the refresh stopped early.",
   status: null,
   missing: false,
 });
 
-// One repo's failure must not cost the rest of the run. Repos are synced in
+// A 404 on one provider's copy of a service says nothing about its other copies, and a
+// service holding archived Bitbucket history must never be offered for removal because
+// that history cannot be re-fetched. So `missing` survives only when every identity of
+// the service — archived and untouched ones included — is itself missing in this run.
+const confineMissingToWholeServices = (
+  skipped: SkippedRepo[], identities: SyncableIdentity[],
+): SkippedRepo[] => {
+  const missingKeys = new Set(skipped.filter((s) => s.missing).map((s) => `${s.provider}/${s.repoKey}`));
+  const wholeServiceGone = (identity: SyncableIdentity): boolean =>
+    identities
+      .filter((i) => i.serviceId === identity.serviceId)
+      .every((i) => missingKeys.has(`${i.provider}/${i.repoKey}`));
+  return skipped.map((s) => {
+    if (!s.missing) return s;
+    const identity = identities.find((i) => i.provider === s.provider && i.repoKey === s.repoKey);
+    return identity && wholeServiceGone(identity) ? s : { ...s, missing: false };
+  });
+};
+
+// One repo's failure must not cost the rest of the run. Identities are synced in
 // sequence and each has its own cursor, so a failure is isolated by construction:
-// the failing repo keeps its old cursor and retries the same range next time,
-// while every other repo still advances.
+// the failing one keeps its old cursor and retries the same range next time,
+// while every other identity still advances.
 export const syncAll = async (
   deps: SyncDeps,
-  repoSlugs: string[],
+  identities: SyncableIdentity[],
   nowIso: string,
-): Promise<{
-  repos: { repoSlug: string; prCount: number }[];
-  skipped: SkippedRepo[];
-  totalPrs: number;
-}> => {
-  const repos: { repoSlug: string; prCount: number }[] = [];
-  const skipped: SkippedRepo[] = [];
-  for (const [index, slug] of repoSlugs.entries()) {
+): Promise<SyncSummary> => {
+  // Archived identities are read-only history. Skipping them before the request is
+  // what makes Bitbucket cost nothing and removes any way for a lapsed credential or
+  // a deleted repo to stall a refresh. Their cached rows still count in analytics.
+  const active = identities.filter((i) => i.state === "active");
+
+  const repos: SyncedRepo[] = [];
+  let skipped: SkippedRepo[] = [];
+  let stoppedEarly: StoppedEarly | null = null;
+  for (const [index, identity] of active.entries()) {
     try {
-      repos.push(await syncRepo(deps, slug, nowIso));
+      repos.push(await syncIdentity(deps, identity, nowIso));
     } catch (err) {
-      const skip = toSkipped(slug, err);
+      const skip = toSkipped(identity, err);
       skipped.push(skip);
       if (isRunWide(skip.status)) {
-        skipped.push(...repoSlugs.slice(index + 1).map(notAttempted));
+        stoppedEarly = { provider: identity.provider, status: skip.status as number, reason: skip.reason };
+        skipped.push(...active.slice(index + 1).map(notAttempted));
         break;
       }
     }
   }
-  return { repos, skipped, totalPrs: repos.reduce((sum, r) => sum + r.prCount, 0) };
+  skipped = confineMissingToWholeServices(skipped, identities);
+  return { repos, skipped, totalPrs: repos.reduce((sum, r) => sum + r.prCount, 0), stoppedEarly };
 };

@@ -5,7 +5,7 @@ import MatrixTable from "@/components/MatrixTable";
 import type { Matrix } from "@/types";
 
 const matrix: Matrix = {
-  rowUsers: [{ accountId: "u1", displayName: "Alice" }],
+  rowUsers: [{ personId: 1, displayName: "Alice" }],
   colHeaders: [{ key: "repo-a", label: "Repo A" }],
   cells: [[3]],
   rowTotals: [3],
@@ -62,8 +62,8 @@ describe("MatrixTable", () => {
   it("greys out cells where the row and column are the same person", () => {
     // Approvals shape: columns are keyed by account id, so the diagonal is self-approval.
     const approvals: Matrix = {
-      rowUsers: [{ accountId: "u1", displayName: "Alice" }, { accountId: "u2", displayName: "Bob" }],
-      colHeaders: [{ key: "u1", label: "Alice" }, { key: "u2", label: "Bob" }],
+      rowUsers: [{ personId: 1, displayName: "Alice" }, { personId: 2, displayName: "Bob" }],
+      colHeaders: [{ key: "1", label: "Alice" }, { key: "2", label: "Bob" }],
       cells: [[0, 4], [7, 0]],
       rowTotals: [4, 7],
       colTotals: [7, 4],
@@ -86,11 +86,11 @@ describe("MatrixTable", () => {
   it("highlights each row's top approver, and every cell in a tie", () => {
     const approvals: Matrix = {
       rowUsers: [
-        { accountId: "u1", displayName: "Alice" },
-        { accountId: "u2", displayName: "Bob" },
-        { accountId: "u3", displayName: "Cara" },
+        { personId: 1, displayName: "Alice" },
+        { personId: 2, displayName: "Bob" },
+        { personId: 3, displayName: "Cara" },
       ],
-      colHeaders: [{ key: "u1", label: "Alice" }, { key: "u2", label: "Bob" }, { key: "u3", label: "Cara" }],
+      colHeaders: [{ key: "1", label: "Alice" }, { key: "2", label: "Bob" }, { key: "3", label: "Cara" }],
       cells: [
         [0, 2, 9], // Alice's top approver is Cara
         [5, 0, 5], // Bob: tie between Alice and Cara

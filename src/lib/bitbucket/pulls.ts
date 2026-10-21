@@ -1,5 +1,7 @@
 import { BITBUCKET_API, fetchAllPages, type FetchFn } from "./client";
-import type { ApprovalRecord, PullRequestRecord, PullRequestState } from "@/types";
+import type { PullRequestState } from "@/types";
+import { tagRepoLevel } from "@/lib/providers/repo-level";
+import { ProviderApiError } from "@/lib/providers/types";
 
 export type RawActivity = {
   approval?: { date: string; user: { account_id: string } };
@@ -24,11 +26,33 @@ type RawPr = {
   participants?: RawParticipant[];
 };
 
+// Bitbucket's own vocabulary: slugs and account ids. Sync resolves these to canonical
+// service and person ids when it stores them, so this module never touches the database.
+export type BitbucketApproval = {
+  repoSlug: string;
+  prId: number;
+  approverAccountId: string;
+  approvedOn: string | null;
+};
+
 // A PR as known from the list endpoint alone: no draft-transition history, but
 // approvals are already present via participants[].
-export type PullRequestPartial = Omit<PullRequestRecord, "readyForReviewOn" | "readyIsFallback"> & {
-  approvals: ApprovalRecord[];
+export type PullRequestPartial = {
+  id: number;
+  repoSlug: string;
+  authorAccountId: string;
+  title: string;
+  state: PullRequestState;
+  createdOn: string;
+  mergedOn: string | null;
+  destinationBranch: string;
+  url: string;
+  approvals: BitbucketApproval[];
 };
+
+// DECLINED and SUPERSEDED both mean abandoned work; nothing downstream distinguishes them.
+const toState = (raw: string): PullRequestState =>
+  raw === "MERGED" || raw === "OPEN" ? raw : "CLOSED";
 
 // Earliest activity update that marks the PR non-draft = when it became ready for review.
 export const deriveReadyForReview = (
@@ -49,7 +73,7 @@ export const extractApprovals = (
   repoSlug: string,
   prId: number,
   activity: RawActivity[],
-): ApprovalRecord[] =>
+): BitbucketApproval[] =>
   activity
     .filter((a) => a.approval)
     .map((a) => ({
@@ -66,7 +90,7 @@ export const extractApprovalsFromParticipants = (
   repoSlug: string,
   prId: number,
   participants: RawParticipant[] = [],
-): ApprovalRecord[] =>
+): BitbucketApproval[] =>
   participants
     .filter((p) => p.approved === true && p.user?.account_id)
     .map((p) => ({
@@ -89,13 +113,19 @@ export const fetchPullRequestsUpdatedSince = async (
     "values.author.account_id,values.destination.branch.name,values.links.html.href," +
     "values.participants.approved,values.participants.user.account_id,next";
   const url = `${BITBUCKET_API}/repositories/${workspace}/${repoSlug}/pullrequests?${states}&q=${q}&pagelen=50&${fields}`;
-  const raw = await fetchAllPages<RawPr>(url, auth, fetchFn);
+  let raw: RawPr[];
+  try {
+    raw = await fetchAllPages<RawPr>(url, auth, fetchFn);
+  } catch (err) {
+    // Only the FIRST request speaks for the repo; a 404 on a later page's cursor does not.
+    throw err instanceof ProviderApiError && err.url === url ? tagRepoLevel(err) : err;
+  }
   return raw.map((p) => ({
     id: p.id,
     repoSlug,
     authorAccountId: p.author.account_id,
     title: p.title,
-    state: p.state as PullRequestState,
+    state: toState(p.state),
     createdOn: p.created_on,
     mergedOn: p.state === "MERGED" ? p.updated_on : null,
     destinationBranch: p.destination.branch.name,

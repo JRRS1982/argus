@@ -10,9 +10,14 @@ const fmtDuration = (ms: number): string => {
 };
 
 export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const totalPrs = rows.reduce((n, r) => n + r.prCount, 0);
-  const fallbackPrs = rows.reduce((n, r) => n + r.prs.filter((p) => p.readyIsFallback).length, 0);
+  const [open, setOpen] = useState<number | null>(null);
+  // Derived from the rows on screen, so the explanation changes with the window and data
+  // source: the caveats are true of Bitbucket rows and false of GitHub rows.
+  const allPrs = rows.flatMap((r) => r.prs);
+  const totalPrs = allPrs.length;
+  const fallbackPrs = allPrs.filter((p) => p.readyForReviewPrecision === "fallback").length;
+  const anyDerivedMerge = allPrs.some((p) => p.mergedOnPrecision === "derived");
+  const anyExactMerge = allPrs.some((p) => p.mergedOnPrecision === "exact");
 
   return (
     <section>
@@ -26,14 +31,27 @@ export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
         </p>
         <p className="text-gray-500">
           <span className="font-medium text-gray-700">What is actually measured:</span>{" "}
-          <span className="font-medium">created → last touched</span>. Bitbucket does not expose a merge timestamp on
-          the PR list, so the end of the interval is the PR&apos;s last activity — the merge for almost all PRs, but
-          later if someone commented after it merged. The start is the draft→ready transition where one was recorded,
-          otherwise the creation time (those PRs are flagged <span className="font-mono">*</span> in the expanded
-          list).{" "}
-          {totalPrs > 0 && fallbackPrs === totalPrs
-            ? `Right now all ${totalPrs} PRs use creation time — no draft→ready history has been synced.`
-            : `Right now ${fallbackPrs} of ${totalPrs} PRs use creation time.`}{" "}
+          {anyDerivedMerge ? (
+            <>
+              <span className="font-medium">created → last touched</span>. For some PRs the provider does not expose a
+              merge timestamp, so the end of the interval is the PR&apos;s last activity — the merge for almost all
+              of them, but later if someone commented after it merged.{" "}
+              {anyExactMerge && "PRs with a recorded merge time use that instead. "}
+            </>
+          ) : totalPrs > 0 ? (
+            <>Each PR is measured to its recorded merge time. </>
+          ) : null}
+          {totalPrs === 0 ? null : fallbackPrs === 0 ? (
+            <>The start is the recorded draft→ready transition for every PR. </>
+          ) : (
+            <>
+              The start is the draft→ready transition where one was recorded, otherwise the creation time (those PRs
+              are flagged <span className="font-mono">*</span> in the expanded list).{" "}
+              {fallbackPrs === totalPrs
+                ? `Right now all ${totalPrs} PRs use creation time — no draft→ready history has been synced.`
+                : `Right now ${fallbackPrs} of ${totalPrs} PRs use creation time.`}{" "}
+            </>
+          )}
           The window is applied to the end of the interval, so a PR opened long before it still counts.
         </p>
         <p className="text-gray-500">
@@ -65,10 +83,10 @@ export default function LeaderboardTab({ rows }: { rows: LeaderboardRow[] }) {
           <tbody>
             {rows.map((row) => (
               <FragmentRow
-                key={row.accountId}
+                key={row.personId}
                 row={row}
-                isOpen={open === row.accountId}
-                onToggle={() => setOpen(open === row.accountId ? null : row.accountId)}
+                isOpen={open === row.personId}
+                onToggle={() => setOpen(open === row.personId ? null : row.personId)}
               />
             ))}
           </tbody>
@@ -95,17 +113,19 @@ function FragmentRow({
           <td className="border px-3 py-2 bg-gray-50" colSpan={5}>
             <ul className="space-y-1">
               {row.prs.map((pr) => (
-                <li key={`${pr.repoSlug}#${pr.id}`} className="flex justify-between gap-4">
+                <li key={`${pr.provider}:${pr.repoKey}#${pr.number}`} data-testid={`pr-${pr.number}`} className="flex justify-between gap-4">
                   <a className="text-blue-600 hover:underline truncate" href={pr.url} target="_blank" rel="noreferrer">
-                    {pr.repoSlug} #{pr.id} — {pr.title}
+                    {pr.repoKey} #{pr.number} — {pr.title}
                   </a>
                   <span className="whitespace-nowrap text-gray-700">
-                    {fmtDuration(pr.reviewMs)}{pr.readyIsFallback ? " *" : ""}
+                    {fmtDuration(pr.reviewMs)}{pr.readyForReviewPrecision === "fallback" ? " *" : ""}
                   </span>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-xs text-gray-500">* draft transition unknown — measured from PR creation.</p>
+            {row.prs.some((p) => p.readyForReviewPrecision === "fallback") && (
+              <p className="mt-2 text-xs text-gray-500">* draft transition unknown — measured from PR creation.</p>
+            )}
           </td>
         </tr>
       )}

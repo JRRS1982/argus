@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hasBitbucketCredentials, isDemoAvailable, isDemoDefaultOn } from "@/config";
+import { hasBitbucketCredentials, hasGitHubCredentials, isDemoAvailable, isDemoDefaultOn } from "@/config";
 
 const env = (over: Record<string, string | undefined>) => over as NodeJS.ProcessEnv;
 
@@ -30,5 +30,17 @@ describe("demo flags", () => {
     expect(isDemoDefaultOn(env({
       NODE_ENV: "development", BITBUCKET_EMAIL: "a@b.c", BITBUCKET_API_TOKEN: "t",
     }))).toBe(false);
+  });
+});
+
+describe("github demo flags", () => {
+  it("treats a GitHub token as the only GitHub credential", () => {
+    expect(hasGitHubCredentials(env({ GITHUB_TOKEN: "t" }))).toBe(true);
+    expect(hasGitHubCredentials(env({}))).toBe(false);
+  });
+
+  it("stops offering demo in production once only GitHub is configured", () => {
+    expect(isDemoAvailable(env({ NODE_ENV: "production", GITHUB_TOKEN: "t" }))).toBe(false);
+    expect(isDemoDefaultOn(env({ GITHUB_TOKEN: "t" }))).toBe(false);
   });
 });

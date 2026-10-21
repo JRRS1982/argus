@@ -4,13 +4,13 @@ import type { InsightsResponse } from "@/types";
 
 const base: InsightsResponse = {
   leaderboard: [
-    { accountId: "u1", displayName: "Ana", prCount: 3, openPrCount: 0,
+    { personId: 1, displayName: "Ana", prCount: 3, openPrCount: 0,
       averageReviewMs: 9_000_000, medianReviewMs: 7_200_000, prs: [] },
-    { accountId: "u2", displayName: "Ben", prCount: 2, openPrCount: 1,
+    { personId: 2, displayName: "Ben", prCount: 2, openPrCount: 1,
       averageReviewMs: 5_000_000, medianReviewMs: 3_600_000, prs: [] },
   ],
   prsCreated: {
-    rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+    rowUsers: [{ personId: 1, displayName: "Ana" }, { personId: 2, displayName: "Ben" }],
     colHeaders: [{ key: "r1", label: "r1" }, { key: "r2", label: "r2" }],
     cells: [[1, 1], [2, 0]],
     rowTotals: [2, 2],
@@ -18,7 +18,7 @@ const base: InsightsResponse = {
     extraColumn: { label: "Services", values: [2, 1] },
   },
   approvals: {
-    rowUsers: [{ accountId: "u1", displayName: "Ana" }, { accountId: "u2", displayName: "Ben" }],
+    rowUsers: [{ personId: 1, displayName: "Ana" }, { personId: 2, displayName: "Ben" }],
     colHeaders: [{ key: "u1", label: "Ana" }, { key: "u2", label: "Ben" }],
     cells: [[0, 4], [1, 0]],
     rowTotals: [4, 1],
@@ -28,7 +28,7 @@ const base: InsightsResponse = {
   window: "6m",
   sinceIso: "2026-01-29T00:00:00.000Z",
   generatedAt: "2026-07-29T00:00:00.000Z",
-  lastRefreshedAt: "2026-07-29T00:00:00.000Z",
+  refreshedAt: [{ provider: "github", lastSyncedOn: "2026-07-29T00:00:00.000Z", archived: false }],
 };
 
 describe("computeHighlights", () => {
@@ -54,14 +54,43 @@ describe("computeHighlights", () => {
     expect(h?.engineer).toBe("Ben"); // 3.6e6 ms < 7.2e6 ms
   });
 
-  it("ends with when the cache was last refreshed, or a prompt when it never was", () => {
+  it("ends with the freshness card, or a prompt when nothing ever synced", () => {
     const cards = computeHighlights(base);
     const last = cards[cards.length - 1];
     expect(last.key).toBe("refreshed");
-    expect(last.engineer).toMatch(/Jul 2026/); // local-time render of 2026-07-29
+    expect(last.lines).toEqual([{ label: "GitHub", value: "29 Jul 2026, 00:00" }]);
 
-    const never = computeHighlights({ ...base, lastRefreshedAt: null });
+    const never = computeHighlights({ ...base, refreshedAt: [] });
     expect(never[never.length - 1].engineer).toBe("Never");
+    expect(never[never.length - 1].lines).toBeUndefined();
+  });
+
+  it("lists each provider's freshness separately, live before archived", () => {
+    const cards = computeHighlights({ ...base, refreshedAt: [
+      { provider: "bitbucket", lastSyncedOn: "2026-09-28T13:00:00.000Z", archived: true },
+      { provider: "github", lastSyncedOn: "2026-10-07T14:02:00.000Z", archived: false },
+    ] });
+    expect(cards.find((c) => c.key === "refreshed")!.lines).toEqual([
+      // "archived", never "last pulled": Bitbucket will never pull again.
+      { label: "GitHub", value: "7 Oct 2026, 14:02" },
+      { label: "Bitbucket", value: "archived 28 Sept 2026" },
+    ]);
+  });
+
+  it("omits a provider that has never synced rather than showing Never", () => {
+    const cards = computeHighlights({ ...base, refreshedAt: [
+      { provider: "github", lastSyncedOn: "2026-10-07T14:02:00.000Z", archived: false },
+    ] });
+    expect(cards.find((c) => c.key === "refreshed")!.lines).toHaveLength(1);
+  });
+
+  it("shows the generation instant as one line in demo mode", () => {
+    const cards = computeHighlights({ ...base, refreshedAt: [
+      { provider: "demo", lastSyncedOn: "2026-10-07T14:02:00.000Z", archived: false },
+    ] });
+    expect(cards.find((c) => c.key === "refreshed")!.lines).toEqual([
+      { label: "Demo", value: "7 Oct 2026, 14:02" },
+    ]);
   });
 
   it("omits recognition categories with no data, but always keeps the context cards", () => {

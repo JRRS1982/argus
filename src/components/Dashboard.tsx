@@ -2,22 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Tabs, { type TabKey } from "@/components/Tabs";
-import TeamTab from "@/components/TeamTab";
+import TeamTab, { type Roster } from "@/components/TeamTab";
 import LeaderboardTab from "@/components/LeaderboardTab";
 import MatrixTable from "@/components/MatrixTable";
 import Highlights from "@/components/Highlights";
 import DemoToggle from "@/components/DemoToggle";
 import { formatWindowLabel, type InsightsWindow } from "@/lib/window";
-import type { InsightsResponse, UserRecord, RepoRecord } from "@/types";
+import type { InsightsResponse } from "@/types";
 
-type Roster = { users: UserRecord[]; repos: RepoRecord[] };
 const EMPTY_MATRIX = { rowUsers: [], colHeaders: [], cells: [], rowTotals: [], colTotals: [] };
 
 export default function Dashboard({
   demoAvailable, demoDefaultOn,
 }: { demoAvailable: boolean; demoDefaultOn: boolean }) {
   const [tab, setTab] = useState<TabKey>("team");
-  const [roster, setRoster] = useState<Roster>({ users: [], repos: [] });
+  const [roster, setRoster] = useState<Roster>({ people: [], services: [] });
   const [insights, setInsights] = useState<InsightsResponse | null>(null);
   // Named `range`, not `window`, to avoid shadowing the global in a client component.
   const [range, setRange] = useState<InsightsWindow>("6m");
@@ -27,7 +26,7 @@ export default function Dashboard({
     // A non-ok response (e.g. demo-off hitting a read-only filesystem) still resolves
     // its body to JSON — an `{ error }` object, not a Roster — so `r.ok` must gate
     // whether we touch state at all. On failure, keep whatever roster we already had
-    // rather than setting it to null: TeamTab maps over roster.users/repos directly.
+    // rather than setting it to null: TeamTab maps over roster.people/services directly.
     fetch(`/api/roster${demo ? "?demo=1" : ""}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((v) => v && setRoster(v))

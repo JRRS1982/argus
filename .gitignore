@@ -51,6 +51,10 @@ data/
 # Claude Code worktrees (scratch, per-session)
 .claude/worktrees/
 
-# Superpowers working notes (plans, specs, task briefs) — local scratch
-docs/superpowers/
+# Superpowers working notes — local scratch, EXCEPT specs.
+# Specs are decision records: they answer "why is it built this way?", which code cannot.
+# Plans and task briefs are transient scheduling and process exhaust — git log answers those better.
+# Note the /* form: git cannot re-include a path whose parent directory is itself excluded.
+docs/superpowers/*
+!docs/superpowers/specs/
 .superpowers/
